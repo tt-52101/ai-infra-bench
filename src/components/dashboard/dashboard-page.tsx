@@ -8,8 +8,9 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
+import { ChartContainer, ChartTooltip, type ChartConfig } from '@/components/ui/chart'
 import { AnimatedCounter } from '@/components/ui/animated-counter'
+import { CustomChartTooltip, DashboardThroughputTooltip, DashboardLatencyTooltip } from '@/components/ui/custom-chart-tooltip'
 import { useAppStore } from '@/lib/store'
 import { useDashboardStats, useModels, useBenchmarks, useResults } from '@/hooks/use-api'
 import type { BenchmarkTaskInfo, BenchmarkResultInfo } from '@/lib/types'
@@ -83,11 +84,11 @@ function SkeletonCard() {
       <CardContent className="p-5">
         <div className="flex items-start justify-between">
           <div className="space-y-2">
-            <div className="h-4 w-24 bg-muted animate-pulse rounded" />
-            <div className="h-7 w-16 bg-muted animate-pulse rounded" />
-            <div className="h-3 w-20 bg-muted animate-pulse rounded" />
+            <div className="h-4 w-24 animate-shimmer rounded" />
+            <div className="h-7 w-16 animate-shimmer rounded" />
+            <div className="h-3 w-20 animate-shimmer rounded" />
           </div>
-          <div className="h-10 w-10 bg-muted animate-pulse rounded-lg" />
+          <div className="h-10 w-10 animate-shimmer rounded-lg" />
         </div>
       </CardContent>
     </Card>
@@ -98,11 +99,11 @@ function SkeletonChart({ height = 'h-[260px]' }: { height?: string }) {
   return (
     <Card className="h-full">
       <CardHeader className="pb-2">
-        <div className="h-5 w-40 bg-muted animate-pulse rounded" />
-        <div className="h-4 w-56 bg-muted animate-pulse rounded mt-1" />
+        <div className="h-5 w-40 animate-shimmer rounded" />
+        <div className="h-4 w-56 animate-shimmer rounded mt-1" />
       </CardHeader>
       <CardContent>
-        <div className={cn(height, 'bg-muted/30 animate-pulse rounded')} />
+        <div className={cn(height, 'animate-shimmer rounded')} />
       </CardContent>
     </Card>
   )
@@ -385,7 +386,7 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {isLoading ? (
           Array.from({ length: 4 }).map((_, i) => (
-            <motion.div key={i} variants={item}>
+            <motion.div key={i} variants={item} className={`stagger-${i + 1}`}>
               <SkeletonCard />
             </motion.div>
           ))
@@ -482,7 +483,7 @@ export function DashboardPage() {
                         stroke="var(--color-muted-foreground)"
                         tickFormatter={(v) => `${(v / 1000).toFixed(1)}k`}
                       />
-                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <ChartTooltip content={<DashboardThroughputTooltip data={throughputData as unknown as Array<Record<string, unknown>>} />} />
                       <Area
                         type="monotone"
                         dataKey="vllm"
@@ -542,7 +543,7 @@ export function DashboardPage() {
                             <Cell key={`cell-${index}`} fill={entry.color} />
                           ))}
                         </Pie>
-                        <ChartTooltip content={<ChartTooltipContent />} />
+                        <ChartTooltip content={<CustomChartTooltip seriesConfig={{ vllm: { label: 'VLLM', color: '#10b981' }, sglang: { label: 'SGLang', color: '#f59e0b' } }} />} />
                       </PieChart>
                     </ChartContainer>
                     <div className="flex items-center justify-center gap-6 mt-2">
@@ -601,7 +602,7 @@ export function DashboardPage() {
                         fontSize={12}
                         stroke="var(--color-muted-foreground)"
                       />
-                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <ChartTooltip content={<DashboardLatencyTooltip />} />
                       <Bar dataKey="vllm" fill="#10b981" radius={[4, 4, 0, 0]} barSize={20} />
                       <Bar dataKey="sglang" fill="#f59e0b" radius={[4, 4, 0, 0]} barSize={20} />
                     </BarChart>

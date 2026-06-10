@@ -131,5 +131,19 @@ export interface DashboardStats {
   failedBenchmarks: number
 }
 
+// 通知类型
+export type NotificationType = 'benchmark_completed' | 'benchmark_failed' | 'model_deployed' | 'analysis_ready' | 'system_alert' | 'profile_updated'
+
+// 通知
+export interface Notification {
+  id: string
+  type: NotificationType
+  title: string
+  description: string
+  timestamp: string // ISO string
+  read: boolean
+  link?: PageKey // navigate to this page on click
+}
+
 // 导航页面
-export type PageKey = 'dashboard' | 'models' | 'parameters' | 'benchmark' | 'reports' | 'analysis'
+export type PageKey = 'dashboard' | 'models' | 'parameters' | 'benchmark' | 'reports' | 'analysis' | 'settings'

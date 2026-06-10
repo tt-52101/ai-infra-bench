@@ -7,7 +7,7 @@ import {
   Cpu, HardDrive, ArrowUpRight, Loader2, CheckCircle2, XCircle,
   Timer, ArrowUpDown, ArrowUp, ArrowDown, Filter, Plus,
   Server, Settings, Cloud, ChevronRight, AlertTriangle,
-  Gauge, TrendingUp, BarChart3
+  Gauge, TrendingUp, BarChart3, Wifi, WifiOff, Radio
 } from 'lucide-react'
 import {
   Card, CardContent, CardDescription, CardFooter,
@@ -50,6 +50,8 @@ import {
   CartesianGrid
 } from 'recharts'
 import { useBenchmarks, useResults, useModels, useProfiles } from '@/hooks/use-api'
+import { useBenchmarkWS, type BenchmarkProgress, type BenchmarkComplete } from '@/hooks/use-benchmark-ws'
+import { useAppStore } from '@/lib/store'
 import { toast } from 'sonner'
 import type {
   BenchmarkTaskInfo, BenchmarkResultInfo, BenchmarkScenario,
@@ -311,6 +313,9 @@ export default function BenchmarkPage() {
   const { data: models } = useModels()
   const { data: profiles } = useProfiles()
 
+  // WebSocket connection for real-time benchmark progress
+  const ws = useBenchmarkWS()
+
   // Map API benchmarks to flat BenchmarkTaskInfo with modelName/profileName/engine
   const tasks = useMemo<BenchmarkTaskInfo[]>(() => {
     if (!benchmarksRaw) return []
@@ -321,6 +326,15 @@ export default function BenchmarkPage() {
   const [configOpen, setConfigOpen] = useState(false)
   const [resultDialogOpen, setResultDialogOpen] = useState(false)
   const [selectedResultTask, setSelectedResultTask] = useState<BenchmarkTaskInfo | null>(null)
+
+  // ─── Listen for pending actions from Command Palette ──────
+  const { pendingAction, setPendingAction } = useAppStore()
+  useEffect(() => {
+    if (pendingAction === 'new_benchmark') {
+      setPendingAction(null)
+      setConfigOpen(true)
+    }
+  }, [pendingAction, setPendingAction])
 
   // Config form state
   const [taskName, setTaskName] = useState('')
@@ -346,10 +360,114 @@ export default function BenchmarkPage() {
   const simulationRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const throughputHistoryRef = useRef<{ time: string; throughput: number }[]>([])
 
+  // Track whether we're using WebSocket or client-side fallback
+  const [isUsingWS, setIsUsingWS] = useState(false)
+
   // Table sorting and filtering
   const [sortField, setSortField] = useState<string>('createdAt')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all')
+
+  // ─── WebSocket Event Handlers ────────────────────────────
+  useEffect(() => {
+    if (!ws.onProgress) return
+
+    const unsubProgress = ws.onProgress((data: BenchmarkProgress) => {
+      if (data.benchmarkId === runningTaskId) {
+        setRunningProgress(data.progress)
+        setLiveMetrics({
+          requestsCompleted: data.requestsCompleted,
+          currentThroughput: data.throughput,
+          currentLatency: data.latency,
+          elapsedSeconds: data.elapsedTime,
+          throughputHistory: data.throughputHistory,
+        })
+        setIsUsingWS(true)
+      }
+    })
+
+    return unsubProgress
+  }, [ws.onProgress, runningTaskId])
+
+  useEffect(() => {
+    if (!ws.onComplete) return
+
+    const unsubComplete = ws.onComplete(async (data: BenchmarkComplete) => {
+      if (data.benchmarkId === runningTaskId) {
+        setRunningTaskId(null)
+        setRunningProgress(0)
+        setIsUsingWS(false)
+
+        const result = data.result
+        // Save result via API
+        try {
+          await addResult({
+            taskId: data.benchmarkId,
+            throughputTokensPerSec: result.throughputTokensPerSec,
+            throughputRequestsPerSec: result.throughputRequestsPerSec,
+            latencyMeanMs: result.latencyMeanMs,
+            latencyP50Ms: result.latencyP50Ms,
+            latencyP90Ms: result.latencyP90Ms,
+            latencyP99Ms: result.latencyP99Ms,
+            timeToFirstTokenMs: result.timeToFirstTokenMs,
+            timePerOutputTokenMs: result.timePerOutputTokenMs,
+            gpuMemoryUsedGb: result.gpuMemoryUsedGb,
+            gpuUtilization: result.gpuUtilization,
+            cpuUtilization: result.cpuUtilization,
+            errorRate: result.errorRate,
+            totalRequests: result.totalRequests,
+            successRequests: result.successRequests,
+            failedRequests: result.failedRequests,
+            detailJson: result.detailJson,
+          })
+        } catch (err) {
+          console.error('Failed to save result:', err)
+          toast.error('Failed to save benchmark result')
+        }
+
+        // Update benchmark status to completed
+        try {
+          await editBenchmark(data.benchmarkId, {
+            status: 'completed',
+            progress: 100,
+            completedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          })
+        } catch (err) {
+          console.error('Failed to update benchmark:', err)
+          toast.error('Failed to update benchmark status')
+        }
+
+        toast.success('Benchmark completed successfully')
+      }
+    })
+
+    return unsubComplete
+  }, [ws.onComplete, runningTaskId, addResult, editBenchmark])
+
+  useEffect(() => {
+    if (!ws.onStopped) return
+
+    const unsubStopped = ws.onStopped(async (data: { benchmarkId: string }) => {
+      if (data.benchmarkId === runningTaskId) {
+        setIsUsingWS(false)
+        try {
+          await editBenchmark(data.benchmarkId, {
+            status: 'failed',
+            updatedAt: new Date().toISOString(),
+          })
+          toast.warning('Benchmark stopped')
+        } catch (err) {
+          console.error('Failed to stop benchmark:', err)
+          toast.error('Failed to update benchmark status')
+        }
+        setRunningTaskId(null)
+        setRunningProgress(0)
+      }
+    })
+
+    return unsubStopped
+  }, [ws.onStopped, runningTaskId, editBenchmark])
 
   // ─── Derived Data ─────────────────────────────────────────
   const filteredProfiles = useMemo(() =>
@@ -395,6 +513,118 @@ export default function BenchmarkPage() {
     setDuration(preset.duration)
   }, [])
 
+  // ─── Client-Side Fallback Simulation ───────────────────────
+  const startClientSimulation = useCallback((
+    taskId: string,
+    taskDuration: number,
+    taskNumRequests: number,
+    taskConcurrency: number,
+    taskInputTokens: number,
+    taskOutputTokens: number,
+  ) => {
+    setLiveMetrics({
+      requestsCompleted: 0,
+      currentThroughput: 0,
+      currentLatency: 0,
+      elapsedSeconds: 0,
+      throughputHistory: []
+    })
+    throughputHistoryRef.current = []
+
+    const totalSteps = 50
+    const intervalMs = 200
+    let step = 0
+
+    simulationRef.current = setInterval(() => {
+      step++
+      const progress = Math.min(Math.round((step / totalSteps) * 100), 100)
+      const elapsedSeconds = Math.round((step / totalSteps) * taskDuration)
+      const reqsCompleted = Math.round((progress / 100) * taskNumRequests)
+
+      // Simulate realistic throughput with some variance
+      const baseThroughput = taskConcurrency === 1 ? 2800 : (1500 + taskConcurrency * 120)
+      const variance = (Math.random() - 0.5) * baseThroughput * 0.15
+      const currentThroughput = Math.max(0, Math.round(baseThroughput + variance))
+
+      const baseLatency = taskConcurrency === 1 ? 580 : (800 + taskConcurrency * 15)
+      const latencyVariance = (Math.random() - 0.5) * baseLatency * 0.2
+      const currentLatency = Math.max(0, Math.round(baseLatency + latencyVariance))
+
+      const newHistoryEntry = { time: `${elapsedSeconds}s`, throughput: currentThroughput }
+      throughputHistoryRef.current = [...throughputHistoryRef.current, newHistoryEntry]
+
+      setLiveMetrics({
+        requestsCompleted: reqsCompleted,
+        currentThroughput,
+        currentLatency,
+        elapsedSeconds,
+        throughputHistory: throughputHistoryRef.current
+      })
+      setRunningProgress(progress)
+
+      if (step >= totalSteps) {
+        if (simulationRef.current) clearInterval(simulationRef.current)
+        simulationRef.current = null
+        setRunningTaskId(null)
+        setRunningProgress(0)
+        setIsUsingWS(false)
+
+        // Generate result data
+        const finalThroughput = currentThroughput
+        const finalLatency = currentLatency
+
+        // Save result via API
+        addResult({
+          taskId,
+          throughputTokensPerSec: finalThroughput,
+          throughputRequestsPerSec: Number((finalThroughput / (taskInputTokens + taskOutputTokens)).toFixed(2)),
+          latencyMeanMs: finalLatency,
+          latencyP50Ms: Math.round(finalLatency * 0.9),
+          latencyP90Ms: Math.round(finalLatency * 1.3),
+          latencyP99Ms: Math.round(finalLatency * 1.6),
+          timeToFirstTokenMs: Math.round(finalLatency * 0.25),
+          timePerOutputTokenMs: Number((1000 / finalThroughput * taskOutputTokens).toFixed(2)),
+          gpuMemoryUsedGb: Number((30 + Math.random() * 40).toFixed(1)),
+          gpuUtilization: Number((0.6 + Math.random() * 0.35).toFixed(2)),
+          cpuUtilization: Number((0.1 + Math.random() * 0.3).toFixed(2)),
+          errorRate: Number((Math.random() * 0.02).toFixed(4)),
+          totalRequests: taskNumRequests,
+          successRequests: taskNumRequests - Math.floor(Math.random() * 5),
+          failedRequests: Math.floor(Math.random() * 5),
+          detailJson: JSON.stringify({
+            latencyDistribution: [
+              { range: `0-${Math.round(finalLatency * 0.5)}ms`, count: Math.round(taskNumRequests * 0.2) },
+              { range: `${Math.round(finalLatency * 0.5)}-${Math.round(finalLatency * 0.9)}ms`, count: Math.round(taskNumRequests * 0.35) },
+              { range: `${Math.round(finalLatency * 0.9)}-${Math.round(finalLatency * 1.2)}ms`, count: Math.round(taskNumRequests * 0.25) },
+              { range: `${Math.round(finalLatency * 1.2)}-${Math.round(finalLatency * 1.5)}ms`, count: Math.round(taskNumRequests * 0.12) },
+              { range: `${Math.round(finalLatency * 1.5)}-${Math.round(finalLatency * 2)}ms`, count: Math.round(taskNumRequests * 0.05) },
+              { range: `>${Math.round(finalLatency * 2)}ms`, count: Math.round(taskNumRequests * 0.03) }
+            ],
+            throughputTimeline: throughputHistoryRef.current.length > 0
+              ? throughputHistoryRef.current
+              : [{ time: '0s', throughput: finalThroughput }]
+          }),
+        }).catch((err) => {
+          console.error('Failed to save result:', err)
+          toast.error('Failed to save benchmark result')
+        })
+
+        // Update benchmark status to completed
+        editBenchmark(taskId, {
+          status: 'completed',
+          progress: 100,
+          completedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }).catch((err) => {
+          console.error('Failed to update benchmark:', err)
+          toast.error('Failed to update benchmark status')
+        })
+
+        toast.success('Benchmark completed successfully')
+      }
+    }, intervalMs)
+  }, [addResult, editBenchmark])
+
   // ─── Start Benchmark Handler ────────────────────────────────
   const handleStartBenchmark = useCallback(async () => {
     if (!taskName || !selectedModelId || !selectedProfileId) return
@@ -435,113 +665,37 @@ export default function BenchmarkPage() {
       setConcurrency(1)
       setDuration(60)
 
-      // Simulate running benchmark
-      setLiveMetrics({
-        requestsCompleted: 0,
-        currentThroughput: 0,
-        currentLatency: 0,
-        elapsedSeconds: 0,
-        throughputHistory: []
-      })
-      throughputHistoryRef.current = []
-
-      const taskDuration = duration
-      const taskNumRequests = numRequests
-      const taskConcurrency = concurrency
-      const taskInputTokens = inputTokens
-      const taskOutputTokens = outputTokens
-
-      const totalSteps = 50
-      const intervalMs = 200
-      let step = 0
-
-      simulationRef.current = setInterval(() => {
-        step++
-        const progress = Math.min(Math.round((step / totalSteps) * 100), 100)
-        const elapsedSeconds = Math.round((step / totalSteps) * taskDuration)
-        const reqsCompleted = Math.round((progress / 100) * taskNumRequests)
-
-        // Simulate realistic throughput with some variance
-        const baseThroughput = taskConcurrency === 1 ? 2800 : (1500 + taskConcurrency * 120)
-        const variance = (Math.random() - 0.5) * baseThroughput * 0.15
-        const currentThroughput = Math.max(0, Math.round(baseThroughput + variance))
-
-        const baseLatency = taskConcurrency === 1 ? 580 : (800 + taskConcurrency * 15)
-        const latencyVariance = (Math.random() - 0.5) * baseLatency * 0.2
-        const currentLatency = Math.max(0, Math.round(baseLatency + latencyVariance))
-
-        const newHistoryEntry = { time: `${elapsedSeconds}s`, throughput: currentThroughput }
-        throughputHistoryRef.current = [...throughputHistoryRef.current, newHistoryEntry]
-
-        setLiveMetrics({
-          requestsCompleted: reqsCompleted,
-          currentThroughput,
-          currentLatency,
-          elapsedSeconds,
-          throughputHistory: throughputHistoryRef.current
+      // Try WebSocket first, fallback to client-side simulation
+      if (ws.connected) {
+        setIsUsingWS(true)
+        ws.startBenchmark({
+          benchmarkId: newTask.id,
+          name: taskName,
+          modelId: selectedModelId,
+          profileId: selectedProfileId,
+          scenario: selectedScenario,
+          numRequests,
+          inputTokens,
+          outputTokens,
+          concurrency,
+          duration,
         })
-        setRunningProgress(progress)
-
-        if (step >= totalSteps) {
-          if (simulationRef.current) clearInterval(simulationRef.current)
-          simulationRef.current = null
-          setRunningTaskId(null)
-          setRunningProgress(0)
-
-          // Generate result data
-          const finalThroughput = currentThroughput
-          const finalLatency = currentLatency
-
-          // Save result via API
-          addResult({
-            taskId: newTask.id,
-            throughputTokensPerSec: finalThroughput,
-            throughputRequestsPerSec: Number((finalThroughput / (taskInputTokens + taskOutputTokens)).toFixed(2)),
-            latencyMeanMs: finalLatency,
-            latencyP50Ms: Math.round(finalLatency * 0.9),
-            latencyP90Ms: Math.round(finalLatency * 1.3),
-            latencyP99Ms: Math.round(finalLatency * 1.6),
-            timeToFirstTokenMs: Math.round(finalLatency * 0.25),
-            timePerOutputTokenMs: Number((1000 / finalThroughput * taskOutputTokens).toFixed(2)),
-            gpuMemoryUsedGb: Number((30 + Math.random() * 40).toFixed(1)),
-            gpuUtilization: Number((0.6 + Math.random() * 0.35).toFixed(2)),
-            cpuUtilization: Number((0.1 + Math.random() * 0.3).toFixed(2)),
-            errorRate: Number((Math.random() * 0.02).toFixed(4)),
-            totalRequests: taskNumRequests,
-            successRequests: taskNumRequests - Math.floor(Math.random() * 5),
-            failedRequests: Math.floor(Math.random() * 5),
-            detailJson: JSON.stringify({
-              latencyDistribution: [
-                { range: `0-${Math.round(finalLatency * 0.5)}ms`, count: Math.round(taskNumRequests * 0.2) },
-                { range: `${Math.round(finalLatency * 0.5)}-${Math.round(finalLatency * 0.9)}ms`, count: Math.round(taskNumRequests * 0.35) },
-                { range: `${Math.round(finalLatency * 0.9)}-${Math.round(finalLatency * 1.2)}ms`, count: Math.round(taskNumRequests * 0.25) },
-                { range: `${Math.round(finalLatency * 1.2)}-${Math.round(finalLatency * 1.5)}ms`, count: Math.round(taskNumRequests * 0.12) },
-                { range: `${Math.round(finalLatency * 1.5)}-${Math.round(finalLatency * 2)}ms`, count: Math.round(taskNumRequests * 0.05) },
-                { range: `>${Math.round(finalLatency * 2)}ms`, count: Math.round(taskNumRequests * 0.03) }
-              ],
-              throughputTimeline: throughputHistoryRef.current.length > 0
-                ? throughputHistoryRef.current
-                : [{ time: '0s', throughput: finalThroughput }]
-            }),
-          }).catch((err) => {
-            console.error('Failed to save result:', err)
-            toast.error('Failed to save benchmark result')
-          })
-
-          // Update benchmark status to completed
-          editBenchmark(newTask.id, {
-            status: 'completed',
-            progress: 100,
-            completedAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          }).catch((err) => {
-            console.error('Failed to update benchmark:', err)
-            toast.error('Failed to update benchmark status')
-          })
-
-          toast.success('Benchmark completed successfully')
-        }
-      }, intervalMs)
+        // Set initial metrics while waiting for first WS update
+        setLiveMetrics({
+          requestsCompleted: 0,
+          currentThroughput: 0,
+          currentLatency: 0,
+          elapsedSeconds: 0,
+          throughputHistory: []
+        })
+      } else {
+        // Fallback to client-side simulation
+        setIsUsingWS(false)
+        startClientSimulation(
+          newTask.id, duration, numRequests, concurrency,
+          inputTokens, outputTokens
+        )
+      }
     } catch (err) {
       console.error('Failed to start benchmark:', err)
       toast.error('Failed to start benchmark. Please try again.')
@@ -549,29 +703,36 @@ export default function BenchmarkPage() {
   }, [
     taskName, selectedModelId, selectedProfileId, selectedScenario,
     numRequests, inputTokens, outputTokens, concurrency, duration,
-    addBenchmark, editBenchmark, addResult
+    addBenchmark, editBenchmark, ws, startClientSimulation
   ])
 
   // ─── Stop Benchmark Handler ─────────────────────────────────
   const handleStopBenchmark = useCallback(async () => {
     if (!runningTaskId) return
+    // Stop client-side simulation if running
     if (simulationRef.current) {
       clearInterval(simulationRef.current)
       simulationRef.current = null
     }
-    try {
-      await editBenchmark(runningTaskId, {
-        status: 'failed',
-        updatedAt: new Date().toISOString()
-      })
-      toast.warning('Benchmark stopped')
-    } catch (err) {
-      console.error('Failed to stop benchmark:', err)
-      toast.error('Failed to update benchmark status')
+    // Stop WebSocket simulation if running
+    if (ws.connected && isUsingWS) {
+      ws.stopBenchmark(runningTaskId)
+    } else {
+      try {
+        await editBenchmark(runningTaskId, {
+          status: 'failed',
+          updatedAt: new Date().toISOString()
+        })
+        toast.warning('Benchmark stopped')
+      } catch (err) {
+        console.error('Failed to stop benchmark:', err)
+        toast.error('Failed to update benchmark status')
+      }
     }
     setRunningTaskId(null)
     setRunningProgress(0)
-  }, [runningTaskId, editBenchmark])
+    setIsUsingWS(false)
+  }, [runningTaskId, editBenchmark, ws, isUsingWS])
 
   // ─── Delete Handler ─────────────────────────────────────────
   const handleDelete = useCallback(async (taskId: string, taskName: string) => {
@@ -641,6 +802,22 @@ export default function BenchmarkPage() {
     }
   }, [])
 
+  // ─── Handle WS disconnection during running benchmark ──────
+  useEffect(() => {
+    if (!ws.connected && isUsingWS && runningTaskId) {
+      // WebSocket disconnected while benchmark is running - fallback to client simulation
+      const running = tasks.find(t => t.id === runningTaskId)
+      if (running) {
+        setIsUsingWS(false)
+        startClientSimulation(
+          runningTaskId, running.duration, running.numRequests,
+          running.concurrency, running.inputTokens, running.outputTokens
+        )
+        toast.info('WebSocket disconnected — switching to local simulation')
+      }
+    }
+  }, [ws.connected, isUsingWS, runningTaskId, tasks, startClientSimulation])
+
   // ─── Get Running Task ───────────────────────────────────────
   const runningTask = useMemo(() =>
     runningTaskId ? tasks.find(t => t.id === runningTaskId) : null,
@@ -668,13 +845,36 @@ export default function BenchmarkPage() {
           transition={{ duration: 0.3 }}
         >
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-                Benchmark Testing
-              </h1>
-              <p className="text-muted-foreground mt-1 text-sm">
-                Evaluate model performance across different scenarios and configurations
-              </p>
+            <div className="flex items-center gap-3">
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+                  Benchmark Testing
+                </h1>
+                <p className="text-muted-foreground mt-1 text-sm">
+                  Evaluate model performance across different scenarios and configurations
+                </p>
+              </div>
+              {/* WebSocket connection indicator */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-1.5">
+                    <motion.div
+                      animate={{ scale: ws.connected ? [1, 1.2, 1] : 1 }}
+                      transition={{ duration: 2, repeat: Infinity, repeatDelay: 1 }}
+                    >
+                      <div className={`size-2.5 rounded-full ${ws.connected ? 'bg-emerald-500' : 'bg-red-400'}`} />
+                    </motion.div>
+                    <span className="text-muted-foreground text-xs font-medium">
+                      {ws.connected ? 'Live' : 'Offline'}
+                    </span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {ws.connected
+                    ? 'WebSocket connected — real-time benchmark updates enabled'
+                    : 'WebSocket disconnected — using client-side simulation'}
+                </TooltipContent>
+              </Tooltip>
             </div>
             <Button onClick={() => setConfigOpen(true)} size="lg" className="shrink-0">
               <Plus className="size-4" /> New Benchmark
@@ -728,7 +928,21 @@ export default function BenchmarkPage() {
                         <Loader2 className="size-4 animate-spin text-blue-600" />
                       </div>
                       <div>
-                        <CardTitle className="text-base">{runningTask.name}</CardTitle>
+                        <div className="flex items-center gap-2">
+                          <CardTitle className="text-base">{runningTask.name}</CardTitle>
+                          {isUsingWS && (
+                            <motion.div
+                              initial={{ opacity: 0, scale: 0.8 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              transition={{ duration: 0.2 }}
+                            >
+                              <Badge className="gap-1 bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0">
+                                <Radio className="size-2.5 animate-pulse" />
+                                Live
+                              </Badge>
+                            </motion.div>
+                          )}
+                        </div>
                         <CardDescription className="text-xs">
                           {runningTask.modelName} • {getScenarioLabel(runningTask.scenario)} • Concurrency: {runningTask.concurrency}
                         </CardDescription>

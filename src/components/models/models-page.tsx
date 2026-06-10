@@ -23,16 +23,20 @@ import {
   FolderOpen,
   Loader2,
   AlertCircle,
+  GitCompareArrows,
 } from 'lucide-react'
 
-import { useModels } from '@/hooks/use-api'
+import { useModels, useResults } from '@/hooks/use-api'
+import { useAppStore } from '@/lib/store'
 import type { ModelInfo, EngineType, ModelStatus } from '@/lib/types'
+import ModelComparison from '@/components/models/model-comparison'
 
 import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -116,34 +120,34 @@ function SkeletonModelCard() {
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0 space-y-2">
             <div className="flex items-center gap-2">
-              <div className="h-5 w-40 bg-muted animate-pulse rounded" />
-              <div className="h-5 w-14 bg-muted animate-pulse rounded" />
+              <div className="h-5 w-40 animate-shimmer rounded" />
+              <div className="h-5 w-14 animate-shimmer rounded" />
             </div>
             <div className="flex items-center gap-3">
-              <div className="h-3 w-16 bg-muted animate-pulse rounded" />
-              <div className="h-3 w-12 bg-muted animate-pulse rounded" />
+              <div className="h-3 w-16 animate-shimmer rounded" />
+              <div className="h-3 w-12 animate-shimmer rounded" />
             </div>
           </div>
           <div className="flex items-center gap-1">
-            <div className="size-8 bg-muted animate-pulse rounded" />
-            <div className="size-8 bg-muted animate-pulse rounded" />
-            <div className="size-8 bg-muted animate-pulse rounded" />
+            <div className="size-8 animate-shimmer rounded" />
+            <div className="size-8 animate-shimmer rounded" />
+            <div className="size-8 animate-shimmer rounded" />
           </div>
         </div>
       </CardHeader>
       <CardContent className="px-5 pb-4 pt-0 space-y-3">
-        <div className="h-4 w-full bg-muted animate-pulse rounded" />
+        <div className="h-4 w-full animate-shimmer rounded" />
         <div className="h-px bg-muted" />
         <div className="grid grid-cols-2 gap-2">
-          <div className="h-4 w-24 bg-muted animate-pulse rounded" />
-          <div className="h-4 w-20 bg-muted animate-pulse rounded" />
-          <div className="h-4 w-24 bg-muted animate-pulse rounded" />
-          <div className="h-4 w-20 bg-muted animate-pulse rounded" />
+          <div className="h-4 w-24 animate-shimmer rounded" />
+          <div className="h-4 w-20 animate-shimmer rounded" />
+          <div className="h-4 w-24 animate-shimmer rounded" />
+          <div className="h-4 w-20 animate-shimmer rounded" />
         </div>
         <div className="h-px bg-muted" />
         <div className="flex justify-between">
-          <div className="h-3 w-20 bg-muted animate-pulse rounded" />
-          <div className="h-3 w-32 bg-muted animate-pulse rounded" />
+          <div className="h-3 w-20 animate-shimmer rounded" />
+          <div className="h-3 w-32 animate-shimmer rounded" />
         </div>
       </CardContent>
     </Card>
@@ -217,11 +221,17 @@ function ModelCard({
   onEdit,
   onDelete,
   onViewDetails,
+  comparisonSelectMode,
+  isSelected,
+  onToggleSelect,
 }: {
   model: ModelInfo
   onEdit: (model: ModelInfo) => void
   onDelete: (model: ModelInfo) => void
   onViewDetails: (model: ModelInfo) => void
+  comparisonSelectMode: boolean
+  isSelected: boolean
+  onToggleSelect: (model: ModelInfo) => void
 }) {
   return (
     <motion.div
@@ -231,11 +241,20 @@ function ModelCard({
       exit={{ opacity: 0, y: -20, scale: 0.95 }}
       transition={{ duration: 0.2 }}
     >
-      <Card className="group relative transition-all duration-200 hover:shadow-md hover:border-primary/20 py-0 gap-0">
+      <Card className={`group relative transition-all duration-200 hover:shadow-md py-0 gap-0 overflow-hidden border-l-4 ${model.engine === 'vllm' ? 'border-l-emerald-500' : 'border-l-amber-500'} ${isSelected ? 'border-primary shadow-md ring-1 ring-primary/30' : 'hover:border-primary/20'} hover:-translate-y-0.5 hover:shadow-lg`}>
+        {/* Gradient overlay on hover */}
+        <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none ${model.engine === 'vllm' ? 'bg-gradient-to-br from-emerald-50/40 to-transparent dark:from-emerald-950/20 dark:to-transparent' : 'bg-gradient-to-br from-amber-50/40 to-transparent dark:from-amber-950/20 dark:to-transparent'}`} />
         <CardHeader className="pb-3 pt-5 px-5">
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1.5">
+                {comparisonSelectMode && (
+                  <Checkbox
+                    checked={isSelected}
+                    onCheckedChange={() => onToggleSelect(model)}
+                    className="mt-0.5"
+                  />
+                )}
                 <CardTitle className="text-base font-semibold truncate">{model.name}</CardTitle>
                 <EngineBadge engine={model.engine} />
               </div>
@@ -244,34 +263,36 @@ function ModelCard({
                 <span className="text-xs text-muted-foreground">v{model.version}</span>
               </div>
             </div>
-            <CardAction>
-              <div className="flex items-center gap-1">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className="size-8" onClick={() => onViewDetails(model)}>
-                      <Eye className="size-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>View Details</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className="size-8" onClick={() => onEdit(model)}>
-                      <Edit className="size-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Edit</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className="size-8 text-destructive hover:text-destructive" onClick={() => onDelete(model)}>
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Delete</TooltipContent>
-                </Tooltip>
-              </div>
-            </CardAction>
+            {!comparisonSelectMode && (
+              <CardAction>
+                <div className="flex items-center gap-1">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon" className="size-8" onClick={() => onViewDetails(model)}>
+                        <Eye className="size-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>View Details</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon" className="size-8" onClick={() => onEdit(model)}>
+                        <Edit className="size-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Edit</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon" className="size-8 text-destructive hover:text-destructive" onClick={() => onDelete(model)}>
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Delete</TooltipContent>
+                  </Tooltip>
+                </div>
+              </CardAction>
+            )}
           </div>
         </CardHeader>
 
@@ -815,6 +836,7 @@ function ModelDetailSheet({
 
 export default function ModelsPage() {
   const { data: models, loading, error, addModel, editModel, removeModel } = useModels()
+  const { data: results } = useResults()
 
   // State
   const [searchQuery, setSearchQuery] = useState('')
@@ -828,8 +850,32 @@ export default function ModelsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
+  // Comparison mode state
+  const [comparisonSelectMode, setComparisonSelectMode] = useState(false)
+  const [selectedForComparison, setSelectedForComparison] = useState<ModelInfo[]>([])
+  const [activeComparison, setActiveComparison] = useState(false)
+
   // Use API data or empty array as fallback
   const modelsList = models ?? []
+  const allResults = results ?? []
+
+  // ─── Listen for pending actions from Command Palette ──────
+  const { pendingAction, setPendingAction } = useAppStore()
+  useEffect(() => {
+    if (pendingAction === 'add_model') {
+      setPendingAction(null)
+      setFormDialogOpen(true)
+    }
+    if (pendingAction?.startsWith('model:')) {
+      setPendingAction(null)
+      const modelId = pendingAction.replace('model:', '')
+      const model = modelsList.find((m) => m.id === modelId)
+      if (model) {
+        setDetailModel(model)
+        setDetailSheetOpen(true)
+      }
+    }
+  }, [pendingAction, setPendingAction, modelsList])
 
   // Filtered models
   const filteredModels = useMemo(() => {
@@ -884,6 +930,45 @@ export default function ModelsPage() {
     setDetailSheetOpen(true)
   }, [])
 
+  // Comparison handlers
+  const handleToggleComparisonSelect = useCallback((model: ModelInfo) => {
+    setSelectedForComparison((prev) => {
+      const exists = prev.find((m) => m.id === model.id)
+      if (exists) {
+        return prev.filter((m) => m.id !== model.id)
+      }
+      if (prev.length >= 4) {
+        toast.warning('Maximum 4 models', { description: 'You can compare up to 4 models at a time.' })
+        return prev
+      }
+      return [...prev, model]
+    })
+  }, [])
+
+  const handleStartComparison = useCallback(() => {
+    if (selectedForComparison.length < 2) {
+      toast.warning('Select at least 2 models', { description: 'You need to select at least 2 models to compare.' })
+      return
+    }
+    setActiveComparison(true)
+  }, [selectedForComparison])
+
+  const handleExitComparison = useCallback(() => {
+    setActiveComparison(false)
+    setComparisonSelectMode(false)
+    setSelectedForComparison([])
+  }, [])
+
+  const handleEnterSelectMode = useCallback(() => {
+    setComparisonSelectMode(true)
+    setSelectedForComparison([])
+  }, [])
+
+  const handleCancelSelectMode = useCallback(() => {
+    setComparisonSelectMode(false)
+    setSelectedForComparison([])
+  }, [])
+
   // Stats
   const modelStats = useMemo(() => {
     const total = modelsList.length
@@ -904,10 +989,45 @@ export default function ModelsPage() {
               Manage and configure inference models for VLLM and SGLang engines.
             </p>
           </div>
-          <Button onClick={handleAdd} className="shrink-0">
-            <Plus className="size-4" />
-            Add Model
-          </Button>
+          <div className="flex items-center gap-2 shrink-0">
+            {!comparisonSelectMode && !activeComparison && (
+              <Button variant="outline" onClick={handleEnterSelectMode} className="shrink-0">
+                <GitCompareArrows className="size-4" />
+                Compare
+              </Button>
+            )}
+            {comparisonSelectMode && !activeComparison && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={handleCancelSelectMode}
+                  className="shrink-0"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleStartComparison}
+                  disabled={selectedForComparison.length < 2}
+                  className="shrink-0"
+                >
+                  <GitCompareArrows className="size-4" />
+                  Compare ({selectedForComparison.length}/4)
+                </Button>
+              </>
+            )}
+            {activeComparison && (
+              <Button variant="outline" onClick={handleExitComparison} className="shrink-0">
+                <X className="size-4" />
+                Exit Comparison
+              </Button>
+            )}
+            {!comparisonSelectMode && !activeComparison && (
+              <Button onClick={handleAdd} className="shrink-0">
+                <Plus className="size-4" />
+                Add Model
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Stats Row */}
@@ -977,13 +1097,33 @@ export default function ModelsPage() {
         </Select>
       </div>
 
-      {/* Model Cards Grid */}
-      {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <SkeletonModelCard key={i} />
-          ))}
-        </div>
+      {/* Comparison View or Normal Model Grid */}
+      <AnimatePresence mode="wait">
+        {activeComparison ? (
+          <motion.div
+            key="comparison"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.3 }}
+          >
+            <ModelComparison
+              selectedModels={selectedForComparison}
+              allResults={allResults}
+              onBack={handleExitComparison}
+            />
+          </motion.div>
+        ) : loading ? (
+          <motion.div
+            key="loading"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
+          >
+            {Array.from({ length: 6 }).map((_, i) => (
+              <SkeletonModelCard key={i} />
+            ))}
+          </motion.div>
       ) : filteredModels.length === 0 ? (
         <motion.div
           initial={{ opacity: 0 }}
@@ -1016,11 +1156,15 @@ export default function ModelsPage() {
                 onEdit={handleEdit}
                 onDelete={handleDelete}
                 onViewDetails={handleViewDetails}
+                comparisonSelectMode={comparisonSelectMode}
+                isSelected={selectedForComparison.some((m) => m.id === model.id)}
+                onToggleSelect={handleToggleComparisonSelect}
               />
             ))}
           </AnimatePresence>
         </div>
       )}
+      </AnimatePresence>
 
       {/* Add/Edit Dialog */}
       <ModelFormDialog

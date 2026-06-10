@@ -813,3 +813,474 @@ Stage Summary:
 4. **用户认证**：使用NextAuth.js v4实现登录/权限控制
 5. **实时通知**：添加WebSocket推送，实时更新benchmark进度
 6. **AI洞察**：使用LLM API生成性能优化建议和异常检测
+
+---
+Task ID: 2-a
+Agent: full-stack-developer
+Task: Add Global Command Palette (Cmd+K) for quick navigation and actions
+
+Work Log:
+- Read worklog.md to understand previous work: all 6 frontend modules built, all connected to real API data, dark theme support, data export
+- Read src/components/ui/command.tsx to understand available Command primitives (CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem, CommandShortcut, CommandSeparator)
+- Read src/lib/store.ts to understand Zustand state management (activePage, setActivePage)
+- Read src/lib/types.ts to understand PageKey type and model types
+- Read src/app/page.tsx to understand current layout structure (SidebarProvider > CommandPalette + layout)
+- Read src/hooks/use-api.ts to understand useModels hook for model search
+- Read benchmark-page.tsx and models-page.tsx to find local dialog/sheet state (configOpen, formDialogOpen)
+- Added `pendingAction` and `setPendingAction` to Zustand store for cross-component signaling
+- Created `/home/z/my-project/src/components/command-palette.tsx` with:
+  - Cmd+K / Ctrl+K global keyboard shortcut listener via useEffect keydown
+  - Navigation group: 6 pages (Dashboard, Models, Parameters, Benchmark, Reports, Analysis) with emerald/amber icons
+  - Actions group: New Benchmark, Add Model, Import Presets, Export Report, New Analysis with shortcut hints
+  - Models group: Dynamic model search from useModels() API hook, engine badge (vLLM/SGLang)
+  - Settings group: Toggle Light/Dark Mode with next-themes
+  - Recent Commands: localStorage-persisted recent actions (max 5) shown at top
+  - Footer hint bar with keyboard shortcut icons (↵ to select, ↑↓ to navigate, esc to close)
+  - Uses CommandDialog from shadcn/ui with proper ARIA labels
+  - Each command execution: adds to recent, sets activePage and/or pendingAction, closes palette
+- Updated `/home/z/my-project/src/app/page.tsx`:
+  - Added import for CommandPalette
+  - Rendered <CommandPalette /> inside SidebarProvider wrapper
+- Updated `/home/z/my-project/src/components/benchmark/benchmark-page.tsx`:
+  - Added import for useAppStore
+  - Added useEffect to listen for pendingAction === 'new_benchmark', opens configOpen sheet
+- Updated `/home/z/my-project/src/components/models/models-page.tsx`:
+  - Added import for useAppStore
+  - Added useEffect to listen for pendingAction === 'add_model', opens formDialogOpen
+  - Added useEffect to listen for pendingAction starting with 'model:', opens detail sheet for that model
+- Fixed lint errors:
+  - Removed AnimatePresence/motion imports (not needed, CommandDialog handles own animations)
+  - Changed useState initialization from useEffect to lazy initializer for recentCommands
+  - Removed unused FileText import
+- Ran ESLint: 0 errors
+- Verified dev server compiles successfully
+
+Stage Summary:
+- Global Command Palette accessible via Cmd+K (Mac) / Ctrl+K (Windows)
+- 4 grouped command categories: Recent, Navigation, Actions, Settings
+- Dynamic model search from API data with engine type indicators
+- Recent commands persisted in localStorage (max 5)
+- Cross-component action signaling via Zustand pendingAction store field
+- BenchmarkPage and ModelsPage respond to pending actions (open dialogs/sheets)
+- InferBench design language: emerald for vLLM items, amber for SGLang items
+- Dark mode compatible, proper ARIA labels, keyboard-friendly
+- Zero lint errors, dev server compiles successfully
+
+---
+Task ID: 3-b
+Agent: full-stack-developer
+Task: Add Notification Center panel - bell icon in header with dropdown
+
+Work Log:
+- Read worklog.md to understand project context and existing features
+- Read current page.tsx header layout (breadcrumb + theme toggle in ml-auto div)
+- Read store.ts to understand Zustand store pattern (create() with set/setState)
+- Read popover.tsx to understand Popover/PopoverTrigger/PopoverContent API
+- Read scroll-area.tsx and badge.tsx to understand available shadcn/ui component APIs
+- Updated `src/lib/types.ts`: Added `NotificationType` (6 types: benchmark_completed, benchmark_failed, model_deployed, analysis_ready, system_alert, profile_updated) and `Notification` interface (id, type, title, description, timestamp, read, link)
+- Updated `src/lib/store.ts`: Added `Notification` to imports, added notification state to AppState interface (notifications array, setNotifications, addNotification, markAsRead, markAllAsRead, removeNotification), implemented all notification actions in store
+- Created `src/components/notification-center.tsx` - Complete Notification Center component with:
+  - Bell icon button as PopoverTrigger, positioned in header next to theme toggle
+  - Red unread count badge on bell icon (shows "9+" for counts > 9)
+  - Pulsing animation on badge when there are unread notifications (framer-motion scale animation)
+  - Popover dropdown panel with:
+    - Header: "Notifications" title with unread count badge + "Mark all read" button (CheckCheck icon)
+    - ScrollArea with max-h-[400px] for notification list
+    - Each notification item with:
+      - Type-specific icon (Check for completed, XCircle for failed, Zap for deployed, BarChart3 for analysis, AlertTriangle for alert, Settings2 for profile)
+      - Type-specific icon color and background (emerald/red/blue/violet/amber/sky)
+      - Type-specific left border accent color for unread items
+      - Title text (bold for unread, muted for read)
+      - Description text (line-clamp-2)
+      - Relative timestamp (e.g. "5m ago", "1h ago", "just now")
+      - Unread indicator dot with pulse animation
+      - Click action: marks as read + navigates to linked page via setActivePage
+    - Footer: "View all notifications" link that navigates to dashboard
+    - Empty state: bell icon + "No notifications" + "You're all caught up!"
+  - 6 mock notifications initialized on first load:
+    - "Benchmark completed: Qwen2.5-72B Multi-Stream" - 5 min ago - unread
+    - "Model deployed: Llama-3.1-70B" - 23 min ago - unread
+    - "Analysis ready: Concurrency vs Throughput" - 1h ago - read
+    - "System alert: Memory pool usage at 73%" - 2h ago - unread
+    - "Benchmark failed: DeepSeek-V3 Burst Test" - 3h ago - read
+    - "Profile updated: High Throughput preset" - 5h ago - read
+  - Framer Motion animations: slide-in for items (opacity + x), scale for badge, pulse for unread dot
+  - Dark mode fully compatible via Tailwind CSS variables (bg-popover, text-foreground, etc.)
+- Updated `src/app/page.tsx`: Added import for NotificationCenter, placed `<NotificationCenter />` in header's ml-auto div (now flex with gap-1) right before the theme toggle button
+- Ran ESLint: 0 errors, 0 warnings
+- Verified dev server compiles successfully
+
+Stage Summary:
+- Complete Notification Center with bell icon + dropdown panel integrated into header
+- 6 notification types with distinct icons, colors, and left border accents
+- Unread count badge with pulse animation on bell icon
+- "Mark all read" functionality
+- Click-to-navigate: clicking a notification marks it read and navigates to the linked page
+- ScrollArea with max height for overflow
+- Empty state when no notifications
+- Mock data initialized via Zustand store on first load
+- Dark mode compatible
+- Zero lint errors, dev server compiles successfully
+
+---
+Task ID: 3-a
+Agent: full-stack-developer
+Task: Add Model Comparison Mode - side-by-side comparison with radar charts
+
+Work Log:
+- Read existing project files: models-page.tsx (1088 lines), use-api.ts hooks, types.ts, chart.tsx, checkbox.tsx
+- Created `src/components/models/model-comparison.tsx` - Comprehensive model comparison component with:
+  - **Color Palette**: 4-color system (emerald, amber, sky, violet) for up to 4 models, with fill, stroke, bg, text, bgLight, and border variants for each color
+  - **Radar Chart**: Recharts RadarChart comparing models across 6 dimensions (Throughput, Latency, Memory Efficiency, Concurrency, Sequence Length, Reliability) with normalized 0-100 scale, semi-transparent filled areas, and ChartContainer/ChartTooltip/ChartLegend integration
+  - **Side-by-Side Specs Table**: HTML table with sticky property column, comparing Engine, GPU Type, GPU Count, Seq Length, dtype, TP, PP, Status, Version across all selected models with icons and engine badges
+  - **Performance Metrics Cards**: Per-model cards with left border color accent, showing Best Throughput, Avg Latency P99, TTFT, TPOT, completed/failed benchmark counts, and sparkline AreaChart throughput trend
+  - **Bar Chart Comparison**: Grouped BarChart with dual Y-axes (throughput tokens/s on left, latency ms on right), comparing throughput and latency across selected models
+  - Empty state with "Select models to compare" message when fewer than 2 models selected
+  - Framer Motion animations for each section (staggered entrance)
+  - Responsive design: radar chart and table stack on mobile
+  - Dark mode compatible
+- Modified `src/components/models/models-page.tsx` with:
+  - Added imports: `GitCompareArrows` from lucide-react, `useResults` from use-api, `ModelComparison` component, `Checkbox` from ui
+  - Added comparison state: `comparisonSelectMode`, `selectedForComparison`, `activeComparison`
+  - Added `useResults()` hook to fetch benchmark results for comparison data
+  - Added comparison handlers: `handleToggleComparisonSelect` (with 4-model max and toast warning), `handleStartComparison` (with 2-model min), `handleExitComparison`, `handleEnterSelectMode`, `handleCancelSelectMode`
+  - Updated header buttons: Compare button (enters select mode), Cancel/Compare(X/4) buttons during select mode, Exit Comparison button during active comparison, Add Model button hidden during comparison modes
+  - Updated ModelCard to accept new props: `comparisonSelectMode`, `isSelected`, `onToggleSelect`
+  - ModelCard shows Checkbox in comparison select mode with highlighted border when selected
+  - ModelCard hides Edit/Delete/View buttons in comparison select mode
+  - Wrapped model grid in AnimatePresence for smooth transition between normal and comparison views
+  - When `activeComparison` is true, shows ModelComparison component with slide animation instead of model card grid
+- Ran ESLint: 0 errors
+- Verified dev server compiles and serves successfully
+
+Stage Summary:
+- Model Comparison feature fully implemented with 4 visualization types: Radar Chart, Specs Table, Performance Cards, Bar Chart
+- Three-state UI flow: Normal → Select Mode (checkboxes on cards) → Active Comparison (full comparison view)
+- Compare button in header, model selection with checkboxes, max 4 models, min 2 models
+- Color-coded model display (emerald/amber/sky/violet) consistent across all chart types
+- Responsive design, dark mode compatible, smooth Framer Motion transitions
+- Zero lint errors, dev server compiles successfully
+
+---
+Task ID: 2-b-4
+Agent: full-stack-developer
+Task: Enhanced Chart Tooltips & UI Polish & Micro-interactions
+
+Work Log:
+- Read all key files: dashboard-page.tsx, reports-page.tsx, models-page.tsx, app-sidebar.tsx, page.tsx, globals.css, chart.tsx, animated-counter.tsx
+- Created `/src/components/ui/custom-chart-tooltip.tsx` — Shared reusable chart tooltip component with:
+  - CustomChartTooltip base component: card-like tooltip with shadow, colored dot indicator, value with units, comparison indicator (↑/↓), visual bar indicator, "Click for details" hint
+  - DashboardThroughputTooltip: convenience wrapper for throughput area chart with date formatting, engine badges (VLLM=emerald, SGLang=amber), tokens/s unit, and % comparison to previous data point
+  - DashboardLatencyTooltip: convenience wrapper for latency bar chart with percentile label, ms unit, visual bar indicator
+  - TooltipEntry and TooltipSeriesConfig TypeScript interfaces for type-safe configuration
+- Updated `src/app/globals.css` — Added shimmer loading animation:
+  - @keyframes shimmer with background-position sliding gradient
+  - .animate-shimmer class with light/dark mode variants (oklch colors)
+  - .stagger-1 through .stagger-6 utility classes for staggered loading delays
+- Updated `src/components/dashboard/dashboard-page.tsx`:
+  - Replaced ChartTooltipContent with DashboardThroughputTooltip for Performance Overview area chart (shows engine badge, tokens/s unit, comparison %)
+  - Replaced ChartTooltipContent with DashboardLatencyTooltip for Latency Distribution bar chart (shows percentile label, ms unit, visual bar)
+  - Replaced ChartTooltipContent with CustomChartTooltip for Engine Distribution pie chart (seriesConfig with VLLM/SGLang)
+  - Replaced animate-pulse with animate-shimmer on SkeletonCard and SkeletonChart components
+  - Added stagger-{n} class for staggered loading animation on stat card skeletons
+- Updated `src/components/reports/reports-page.tsx`:
+  - Replaced ThroughputTooltip with CustomChartTooltip-based version (colored dots, units, click hint)
+  - Replaced ScatterTooltip with CustomChartTooltip-based version (engine badge, metrics with units, click hint)
+  - Replaced default Recharts Tooltip for Latency Distribution with CustomChartTooltip (P50/P90/P99 with colors and ms units)
+  - Replaced default Recharts Tooltip for TTFT & TPOT with CustomChartTooltip (4 series with distinct colors and ms units)
+  - Replaced animate-pulse with animate-shimmer on SkeletonCard and SkeletonChart
+- Updated `src/components/models/models-page.tsx`:
+  - Added colored left border based on engine type (border-l-emerald-500 for vllm, border-l-amber-500 for sglang)
+  - Added hover lift effect (hover:-translate-y-0.5, hover:shadow-lg)
+  - Added gradient overlay on hover (emerald tint for vllm, amber tint for sglang)
+  - Added overflow-hidden to Card for gradient overlay containment
+  - Replaced animate-pulse with animate-shimmer on SkeletonModelCard
+- Updated `src/components/app-sidebar.tsx`:
+  - Added keyboard shortcut hints (⌘1 through ⌘6) next to navigation items, hidden when sidebar is collapsed
+  - Made active indicator bar thicker (w-[3px] → w-[4px]) and taller (h-5 → h-7)
+  - Added subtle glow effect on active indicator (shadow-[0_0_8px_rgba(16,185,129,0.5)])
+  - Replaced static green dot in sidebar footer with animated ping pulse (animate-ping)
+- Updated `src/app/page.tsx`:
+  - Replaced static green dot in footer with animated ping pulse (animate-ping)
+  - Made version number more prominent (font-semibold text-foreground/80 instead of font-medium)
+- Ran ESLint: zero errors
+- Verified dev server compiles successfully
+
+Stage Summary:
+- CustomChartTooltip shared component created with 3 convenience wrappers (DashboardThroughput, DashboardLatency, generic)
+- Dashboard: enhanced tooltips on all 3 charts (Performance Overview, Engine Distribution, Latency Distribution)
+- Reports: enhanced tooltips on all 4 chart tabs (Throughput, Latency, Scatter, TTFT/TPOT) with "Click for details" hint
+- Model Cards: hover lift (-translate-y-0.5), colored left border (emerald/amber), gradient overlay on hover
+- Sidebar: keyboard shortcuts (⌘1-⌘6), thicker active bar with glow, pulsing green dot
+- Footer: animated pulsing green dot, more prominent version number
+- Loading states: shimmer animation replacing animate-pulse across Dashboard, Reports, and Models pages
+- Staggered loading with utility classes for sequential card appearance
+- Zero lint errors, dev server compiles successfully
+
+---
+Task ID: 5-a
+Agent: full-stack-developer
+Task: Implement keyboard shortcuts ⌘+1-6 for sidebar navigation
+
+Work Log:
+- Read worklog.md to understand project history and current state
+- Read src/app/page.tsx to understand current Home component structure
+- Read src/components/command-palette.tsx to understand existing Cmd+K shortcut implementation and avoid conflicts
+- Read src/components/app-sidebar.tsx to confirm shortcut hints (⌘1-⌘6) are already displayed in sidebar
+- Read src/lib/store.ts to confirm setActivePage is available via useAppStore
+- Read src/lib/types.ts to confirm PageKey type definition
+- Added `useEffect` import from React to page.tsx
+- Updated useAppStore destructuring to include `setActivePage` alongside `activePage`
+- Added keyboard shortcut useEffect in Home component with:
+  - SHORTCUT_MAP mapping keys '1'-'6' to PageKey values (dashboard, models, parameters, benchmark, reports, analysis)
+  - keydown event listener on document
+  - Checks for metaKey (Mac) or ctrlKey (Windows/Linux) + number keys 1-6
+  - Ignores shortcuts when user is typing in INPUT, TEXTAREA, SELECT, or contentEditable elements
+  - Prevents default browser behavior (e.g., Ctrl+1-8 tab switching in browsers)
+  - Calls setActivePage with the corresponding page
+  - Properly cleans up event listener on unmount
+  - Dependencies: [setActivePage]
+- No conflict with existing Cmd+K command palette shortcut (handled separately in command-palette.tsx)
+- Ran ESLint: zero errors
+- Verified dev server compiles successfully
+
+Stage Summary:
+- Keyboard shortcuts ⌘+1-6 (or Ctrl+1-6) now work for sidebar navigation
+- Shortcuts are properly ignored when user is typing in form fields
+- Default browser behavior is prevented (no tab switching interference)
+- No conflict with existing Cmd+K command palette shortcut
+- Sidebar already displays shortcut hints (⌘1-⌘6), now they actually function
+- Zero lint errors, dev server compiles successfully
+
+---
+Task ID: 5-b
+Agent: full-stack-developer
+Task: Add WebSocket real-time benchmark progress updates
+
+Work Log:
+- Read worklog.md to understand project history and previous agent work
+- Read current benchmark-page.tsx (~1100 lines) to understand existing client-side simulation mechanism
+- Read use-api.ts hooks, Caddyfile, examples/websocket/ for WebSocket pattern reference
+- Created `mini-services/benchmark-ws/package.json` - socket.io dependency, `bun --hot index.ts` dev script
+- Created `mini-services/benchmark-ws/index.ts` - WebSocket server on port 3003 with:
+  - Socket.io server with path='/', CORS origin=*, pingTimeout=60000
+  - `benchmark:start` event: client emits with BenchmarkConfig, server creates simulation interval
+  - `benchmark:progress` event: server emits every 500ms with benchmarkId, progress (0-100), throughput, latency, requestsCompleted, elapsedTime, throughputHistory
+  - `benchmark:complete` event: server emits when progress=100 with final result data (all metrics, latencyDistribution, throughputTimeline)
+  - `benchmark:stop` event: client emits to cancel, server clears interval
+  - `benchmark:subscribe`/`benchmark:unsubscribe` events: client subscribes to specific benchmark progress
+  - Simulation: progress increments 1-3% per tick, base throughput varies by concurrency (2800 tok/s single, 1500+conc*120 multi), latency inversely varies, 15-20% random variance
+  - Active simulations tracked in Map<benchmarkId, SimulationState>
+  - Cleanup on client disconnect (stops all simulations for that socket)
+  - Graceful shutdown (SIGTERM/SIGINT)
+- Installed socket.io-client@4.8.3 in main project
+- Created `src/hooks/use-benchmark-ws.ts` - React hook with:
+  - Connects via `io("/?XTransformPort=3003")` (Caddy gateway pattern)
+  - `connected` state tracking (true/false)
+  - `startBenchmark(config)` - emits benchmark:start
+  - `stopBenchmark(benchmarkId)` - emits benchmark:stop
+  - `subscribeToBenchmark(benchmarkId)` / `unsubscribeFromBenchmark(benchmarkId)` - subscribe/unsubscribe
+  - `onProgress(callback)` - registers benchmark:progress listener, returns cleanup function
+  - `onComplete(callback)` - registers benchmark:complete listener, returns cleanup function
+  - `onStopped(callback)` - registers benchmark:stopped listener, returns cleanup function
+  - Auto-reconnection (10 attempts, 1s-5s delay)
+  - TypeScript types: BenchmarkConfig, BenchmarkProgress, BenchmarkCompleteResult, BenchmarkComplete, UseBenchmarkWSReturn
+- Modified `src/components/benchmark/benchmark-page.tsx`:
+  - Added `import { useBenchmarkWS, type BenchmarkProgress, type BenchmarkComplete }` from use-benchmark-ws hook
+  - Added `Wifi, WifiOff, Radio` icon imports
+  - Added `ws = useBenchmarkWS()` hook usage
+  - Added `isUsingWS` state to track WebSocket vs client-side simulation
+  - Added 3 WebSocket event handler useEffects:
+    - onProgress: updates runningProgress and liveMetrics when benchmark:progress received
+    - onComplete: saves result via API, updates benchmark status to completed, shows toast
+    - onStopped: updates benchmark status to failed, resets running state
+  - Extracted `startClientSimulation()` as reusable function for fallback
+  - Updated `handleStartBenchmark`: if ws.connected → emit benchmark:start via WS; else → fallback to client-side setInterval
+  - Updated `handleStopBenchmark`: if ws.connected + isUsingWS → emit benchmark:stop; else → client cleanup + API update
+  - Added WS disconnection fallback: if WS disconnects during running benchmark, auto-switches to client-side simulation with toast notification
+  - Added WebSocket connection status indicator in header: green pulsing dot + "Live" when connected, red dot + "Offline" when disconnected, tooltip with explanation
+  - Added "Live" badge with Radio icon (animate-pulse) next to benchmark name in running panel when using WS
+- Ran ESLint: 0 errors
+- Started benchmark-ws mini-service on port 3003, verified socket.io polling endpoint returns 200
+- Verified Next.js dev server running on port 3000, API endpoints responding
+
+Stage Summary:
+- Complete WebSocket mini-service at mini-services/benchmark-ws/ (port 3003)
+- use-benchmark-ws.ts hook with connection management, event listeners, and auto-reconnection
+- Benchmark page integrated with WS: uses WS for real-time progress when connected, falls back to client-side simulation when disconnected
+- Connection status UI: green/red dot in header, "Live" badge on running benchmark panel
+- Graceful fallback: auto-switches to client simulation if WS disconnects mid-benchmark
+- Zero lint errors, both servers running successfully
+
+---
+Task ID: 7
+Agent: full-stack-developer
+Task: Add a Settings page with platform configuration options
+
+Work Log:
+- Read worklog.md to understand project history and existing modules (Dashboard, Models, Parameters, Benchmark, Reports, Analysis + Backend API + WebSocket service)
+- Read types.ts, app-sidebar.tsx, page.tsx, command-palette.tsx to understand navigation and routing structure
+- Updated `src/lib/types.ts` - Added 'settings' to the PageKey type union
+- Created `src/components/settings/settings-page.tsx` - Comprehensive Settings page with 6 sections:
+  - **General Settings** (Card): Platform Name (text input, default "InferBench"), Default Engine (select: VLLM/SGLang/Both), Default Benchmark Duration (slider 30-600s, default 120s), Auto-refresh Data (switch, default on), Refresh Interval (select: 5s/10s/30s/60s, default 30s, conditionally shown when auto-refresh is on)
+  - **Appearance** (Card): Theme (select: Light/Dark/System, default System, integrates with next-themes), Compact Mode (switch, reduces spacing), Show Keyboard Shortcuts (switch, default on), Animation Speed (select: Slow/Normal/Fast/None, default Normal)
+  - **Benchmark Defaults** (Card): Default Scenario (select: 5 options), Default Concurrency (slider 1-128, default 16), Default Num Requests (number input, default 1000), Default Input Token Length (slider 32-8192, default 512), Default Output Token Length (slider 32-8192, default 256), Auto-save Results (switch, default on), Show Live Progress (switch, default on)
+  - **Notifications** (Card): Enable Notifications master switch (default on), sub-toggles for Benchmark Complete (on), Benchmark Failed (on), System Alerts (on), Model Deployed (off), Sound Effects (off). Sub-toggles disabled with opacity when master is off.
+  - **Data Management** (Card): Export All Data (button → JSON download with metadata), Import Data (button → file picker for JSON import with merge), Clear All Benchmark Results (button → AlertDialog with red action button), Reset to Defaults (button → AlertDialog with amber action button)
+  - **API Configuration** (Card): VLLM API Endpoint (text input, default "http://localhost:8000" + Test Connection button), SGLang API Endpoint (text input, default "http://localhost:30000" + Test Connection button), WebSocket Endpoint (text input, default "ws://localhost:3003" + Test Connection button), API Timeout (slider 5-120s, default 30s). Test Connection shows loading spinner → check/X icon + toast notification.
+- State management: Settings loaded from localStorage via useState lazy initializer, auto-saved on every change via updateSection() which calls saveSettings() immediately. No useEffect with setState (lint-compliant).
+- Theme integration: When appearance.theme changes, useEffect calls setTheme() from next-themes
+- Responsive layout: 2-column grid on desktop (lg:grid-cols-2), 1-column on mobile
+- Framer Motion: Staggered card entrance animations via custom variants with delay index
+- Design: Emerald accents consistent with InferBench theme, dark mode compatible, proper labels with descriptions
+- Updated `src/components/app-sidebar.tsx` - Added Settings import from lucide-react, added 7th nav item: { key: 'settings', label: 'Settings', icon: Settings, shortcut: '⌘7' }
+- Updated `src/app/page.tsx` - Added SettingsPage import, added 'settings' to PAGE_TITLES, added case 'settings' to PageContent switch, added '7': 'settings' to SHORTCUT_MAP, updated comment from "1-6" to "1-7"
+- Updated `src/components/command-palette.tsx` - Added Settings import from lucide-react, added { id: 'settings', label: 'Settings', icon: <Settings /> } to NAV_ITEMS array
+- Fixed lint error: Removed useState for `mounted` and useEffect that called setMounted(true) - instead used useState lazy initializer for settings and removed the mounted guard entirely (component is 'use client' and always client-rendered)
+- Ran ESLint: 0 errors
+
+Stage Summary:
+- Complete Settings page with 6 configuration sections: General, Appearance, Benchmark Defaults, Notifications, Data Management, API Configuration
+- All settings persisted to localStorage with auto-save on change
+- Theme switching integrated with next-themes
+- Test Connection buttons for VLLM, SGLang, and WebSocket endpoints
+- Data import/export functionality with JSON format
+- AlertDialog confirmations for destructive actions (clear results, reset to defaults)
+- Responsive 2-column layout on desktop, 1-column on mobile
+- Settings added as 7th navigation item with ⌘7 shortcut
+- Zero lint errors, dev server compiles successfully
+
+---
+Task ID: 8
+Agent: full-stack-developer
+Task: Add Advanced Analysis features - Multi-parameter correlation heatmap and optimization suggestions
+
+Work Log:
+- Read worklog.md to understand previous agents' work (6 modules built: Dashboard, Models, Parameters, Benchmark, Reports, Analysis; all integrated with backend API)
+- Read current analysis-page.tsx (919 lines) to understand existing structure: header with model/engine selectors, 5 dimension selection cards, 4 summary cards, single/multi-model chart tabs, recommendations, historical table
+- Read tabs.tsx, chart.tsx, tooltip.tsx, types.ts for component APIs
+- Initialized fullstack development environment
+- Rewrote src/components/analysis/analysis-page.tsx with the following major additions:
+
+  **1. Multi-Parameter Correlation Heatmap** (new "Correlation Heatmap" tab):
+  - 6 parameters (Y-axis): tensor_parallelism, gpu_memory_utilization, max_num_seqs, max_model_length, block_size, swap_space
+  - 6 metrics (X-axis): throughput_tokens_per_sec, latency_p99_ms, ttft_ms, tpot_ms, gpu_utilization, memory_efficiency
+  - Custom CSS-based heatmap rendered with divs (red → white → emerald gradient for correlation values -1.0 to +1.0)
+  - Each cell shows colored background and correlation value text
+  - Interactive: hover over a cell to see Tooltip with detailed description of the parameter-metric relationship
+  - Color legend at bottom showing gradient scale with labels
+  - 3 summary cards: Strongest Positive, Strongest Negative, Most Influential Parameter
+  - Realistic correlation values (e.g., tensor_parallelism↔throughput=+0.85, gpu_mem_util↔memory_efficiency=-0.55)
+  - Detailed descriptions for each cell (CORRELATION_DESCRIPTIONS) explaining the relationship
+
+  **2. Optimization Suggestions Engine** (new "Optimization Suggestions" tab):
+  - 4 suggestion categories with distinct styling:
+    - Performance Optimization (emerald/green): "Increase TP from 2→4 for +45% throughput", "Reduce max_num_seqs from 256→128 for -30% latency"
+    - Resource Efficiency (amber): "Lower gpu_mem_util from 0.95→0.85 to reduce OOM risk", "Enable prefix_caching to save 20% memory"
+    - Risk Warnings (red): "Current gpu_mem_util=0.95 is near OOM threshold", "Concurrency > 64 causes latency degradation"
+    - Trade-off Analysis (sky/blue): "TP 2→4: +45% throughput but +2ms TTFT overhead", "Sweet spot: max_num_seqs=64"
+  - Each suggestion card shows: category icon, title, description, expected impact badge, current→suggested values, confidence level (High/Medium/Low) badge, "Apply" button
+  - "Generate Suggestions" button with loading state (1.5s simulated delay)
+  - Empty state with Lightbulb icon and instructional text
+  - Loading skeleton with 4 placeholder cards
+  - Category filter badges showing count per category
+  - Toast notification on generation
+
+  **3. Parameter Sensitivity Analysis** (new "Sensitivity Analysis" tab):
+  - Tornado-style horizontal bar chart using Recharts BarChart with vertical layout
+  - Shows positive impact (emerald) and negative impact (red) bars per parameter
+  - Metric selector dropdown: Throughput, Latency P99, TTFT, GPU Utilization
+  - Top 6 parameters sorted by total impact magnitude
+  - 3 summary cards showing top 3 most impactful parameters with impact values and impact level badges (High/Medium/Low)
+  - Detailed Sensitivity Matrix table: all parameters × all metrics, with flame icon highlighting top 3 per metric
+  - Realistic impact values (e.g., tensor_parallelism on throughput: +45%/-20%; max_model_length on TTFT: -40%/+10%)
+
+  **4. Top-level Tab Integration**:
+  - Wrapped entire page content in 4-tab navigation:
+    - "Inflection Analysis" (existing content preserved exactly)
+    - "Correlation Heatmap" (new)
+    - "Optimization Suggestions" (new)
+    - "Sensitivity Analysis" (new)
+  - Tab triggers with icons: Target, Grid3X3, Sparkles, Tornado
+  - Header (model/engine selectors, New Analysis button) remains outside tabs for global access
+
+- Added new imports: Tornado, Grid3X3, Flame, Lightbulb, ShieldAlert, Scale, Sparkles, ArrowRight, Info, Tooltip/TooltipContent/TooltipTrigger, BarChart/Bar/RechartsTooltip
+- Added useResults hook import for data access
+- All new features are dark mode compatible (using CSS variables and bg-*/text-* Tailwind classes)
+- All new features are responsive (grid layouts with sm:/md:/lg: breakpoints)
+- Consistent with InferBench design: emerald for VLLM, amber for SGLang, red for danger
+- Ran ESLint: 0 errors
+- Verified dev server compiles and serves successfully (HTTP 200)
+
+Stage Summary:
+- Analysis page enhanced from 1 tab (inflection analysis only) to 4 tabs
+- Correlation Heatmap: 6×6 parameter-metric matrix with interactive tooltips, color legend, summary cards
+- Optimization Suggestions: 8 suggestions across 4 categories with confidence levels, impact badges, apply buttons
+- Sensitivity Analysis: Tornado chart + top 3 summary cards + detailed sensitivity matrix table
+- All existing inflection analysis functionality preserved exactly
+- Zero lint errors, dev server running without issues
+
+---
+Task ID: Session-3
+Agent: Main Agent (Cron Review + Feature Development)
+Task: QA test all pages, fix bugs, add new features, enhance UI
+
+Work Log:
+- Read worklog.md to understand project status (815+ lines of detailed history)
+- Ran `bun run lint`: 0 errors
+- Tested all pages with agent-browser: Dashboard, Models, Parameters, Benchmark, Reports, Analysis - all working
+- Checked browser console: 0 errors
+- VLM analysis of dashboard screenshot: 8/10 visual quality rating
+- No bugs found, project stable - proceeded with new feature development
+
+New Features Implemented:
+1. **Global Command Palette (Cmd+K)** - Quick navigation, actions, model search, recent commands, theme toggle
+2. **Notification Center** - Bell icon in header, 6 notification types, unread badge with pulse, mark all read
+3. **Model Comparison Mode** - Radar chart, side-by-side specs table, performance cards, grouped bar chart
+4. **Enhanced Chart Tooltips** - Custom reusable tooltip component, engine badges, comparison arrows, units
+5. **UI Polish & Micro-interactions** - Shimmer loading, staggered animations, hover lift on model cards, sidebar keyboard shortcuts (⌘1-7), active indicator glow, footer pulse dot
+6. **Keyboard Shortcuts** - ⌘1-7 for sidebar navigation, ⌘K for command palette, all working
+7. **WebSocket Real-Time Benchmark** - Socket.io mini-service on port 3003, live progress updates, graceful fallback
+8. **Settings Page** - 6 configuration sections (General, Appearance, Benchmark Defaults, Notifications, Data Management, API Configuration), localStorage persistence
+9. **Advanced Analysis** - Correlation Heatmap (6×6 matrix), Optimization Suggestions (4 categories with impact/confidence), Sensitivity Analysis (tornado chart + top 3 impactful params)
+
+Stage Summary:
+- 9 major new features added in this session
+- All pages verified working with agent-browser
+- Zero lint errors, zero browser console errors
+- VLM visual quality rating: 8/10
+- Project now has 7 navigation items (Dashboard, Models, Parameters, Benchmark, Reports, Analysis, Settings)
+- WebSocket mini-service running on port 3003
+
+## 项目当前状态（第三轮Review后）
+
+### 已完成功能（累计）
+1. **Dashboard** - 统计卡片(动画计数器) + 性能趋势图(增强tooltip) + 引擎分布图 + 延迟分布图(增强tooltip) + 结果表格 + 快捷操作 + 系统健康监控 + 活动时间线 + 渐变顶栏
+2. **Model Management** - 完整CRUD + 搜索过滤 + 引擎/状态筛选 + 详情面板 + **模型对比模式(雷达图/规格表/性能卡片/柱状图)** + 悬浮提升动效 + 彩色左边框
+3. **Parameter Tuning** - 4预设配置 + 手风琴参数表单 + 实时影响预估 + 配置CRUD
+4. **Benchmark Testing** - 5种场景 + **WebSocket实时进度** + 客户端降级模拟 + 历史记录 + 详细结果 + Live/Offline状态指示
+5. **Performance Reports** - 4种图表(**增强自定义tooltip**) + VLLM vs SGLang对比 + 可排序表格 + 数据导出(CSV/JSON/剪贴板)
+6. **Inflection Point Analysis** - 5维度分析 + **相关性热力图(6×6矩阵)** + **优化建议(4类别8条建议)** + **敏感性分析(龙卷风图+Top3影响参数)** + 单/多模型图表 + 推荐 + 历史记录
+7. **Settings** - 通用设置 + 外观设置 + Benchmark默认值 + 通知设置 + 数据管理 + API配置
+8. **Backend API** - 11路由文件 + Dashboard统计 + 种子接口
+9. **暗色主题** - next-themes + 侧边栏/Header双位置切换
+10. **Command Palette (⌘K)** - 快速导航 + 快捷操作 + 模型搜索 + 最近命令 + 主题切换
+11. **Notification Center** - Bell图标 + 6种通知类型 + 未读徽章脉冲 + 标记已读
+12. **键盘快捷键** - ⌘1-7导航 + ⌘K命令面板
+13. **WebSocket实时服务** - Socket.io迷你服务(端口3003) + 实时Benchmark进度
+14. **UI增强** - 侧边栏渐变/动效/快捷键提示/通知徽章 + Dashboard系统健康/活动时间线 + Shimmer骨架屏 + 交错加载动画 + 悬浮提升动效 + 页脚脉冲指示灯
+
+### 未解决问题或风险
+- WebSocket迷你服务需手动启动(`cd mini-services/benchmark-ws && bun run dev`)
+- Benchmark运行模拟是客户端/WebSocket模拟，未对接真实推理引擎
+- 参数调优"实时影响预估"基于简单公式，非真实数据
+- 国际化（i18n）尚未实现
+- 用户认证尚未实现
+
+### 下一阶段优先事项
+1. **对接真实推理引擎**：集成vLLM/SGLang CLI，实现真实benchmark执行
+2. **国际化**：使用next-intl实现中英文切换
+3. **用户认证**：使用NextAuth.js v4实现登录/权限控制
+4. **AI洞察**：使用LLM API生成性能优化建议和异常检测
+5. **图表交互增强**：点击钻取、图表缩放、数据点详细悬浮
+6. **Dashboard拖拽布局**：自定义widget排列和大小

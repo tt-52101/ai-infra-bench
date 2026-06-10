@@ -1,6 +1,6 @@
 'use client'
 
-import React from 'react'
+import React, { useEffect } from 'react'
 import { useTheme } from 'next-themes'
 import { Sun, Moon } from 'lucide-react'
 import { motion } from 'framer-motion'
@@ -12,7 +12,10 @@ import ParametersPage from '@/components/parameters/parameters-page'
 import BenchmarkPage from '@/components/benchmark/benchmark-page'
 import ReportsPage from '@/components/reports/reports-page'
 import AnalysisPage from '@/components/analysis/analysis-page'
+import { SettingsPage } from '@/components/settings/settings-page'
 import { AppSidebar } from '@/components/app-sidebar'
+import { CommandPalette } from '@/components/command-palette'
+import { NotificationCenter } from '@/components/notification-center'
 import {
   SidebarProvider,
   SidebarInset,
@@ -34,6 +37,7 @@ const PAGE_TITLES: Record<PageKey, string> = {
   benchmark: 'Benchmark Testing',
   reports: 'Performance Reports',
   analysis: 'Inflection Point Analysis',
+  settings: 'Settings',
 }
 
 function PageContent({ page }: { page: PageKey }) {
@@ -50,6 +54,8 @@ function PageContent({ page }: { page: PageKey }) {
       return <ReportsPage />
     case 'analysis':
       return <AnalysisPage />
+    case 'settings':
+      return <SettingsPage />
     default:
       return <DashboardPage />
   }
@@ -78,11 +84,51 @@ function GradientTopBar() {
 }
 
 export default function Home() {
-  const { activePage } = useAppStore()
+  const { activePage, setActivePage } = useAppStore()
   const { theme, setTheme } = useTheme()
+
+  // Keyboard shortcuts: Cmd+1-6 (or Ctrl+1-6) for sidebar navigation
+  useEffect(() => {
+    const SHORTCUT_MAP: Record<string, PageKey> = {
+      '1': 'dashboard',
+      '2': 'models',
+      '3': 'parameters',
+      '4': 'benchmark',
+      '5': 'reports',
+      '6': 'analysis',
+      '7': 'settings',
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle Cmd (Mac) or Ctrl (Windows/Linux) + number 1-7
+      if (!(e.metaKey || e.ctrlKey)) return
+      const page = SHORTCUT_MAP[e.key]
+      if (!page) return
+
+      // Don't capture shortcuts when user is typing in an input field
+      const target = e.target as HTMLElement
+      const tagName = target.tagName
+      if (
+        tagName === 'INPUT' ||
+        tagName === 'TEXTAREA' ||
+        tagName === 'SELECT' ||
+        target.isContentEditable
+      ) {
+        return
+      }
+
+      // Prevent default browser behavior (e.g., Ctrl+1-8 switch browser tabs)
+      e.preventDefault()
+      setActivePage(page)
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [setActivePage])
 
   return (
     <SidebarProvider>
+      <CommandPalette />
       <div className="flex w-full min-h-screen flex-col">
         <GradientTopBar />
         <div className="flex flex-1">
@@ -100,7 +146,8 @@ export default function Home() {
                   </BreadcrumbItem>
                 </BreadcrumbList>
               </Breadcrumb>
-              <div className="ml-auto">
+              <div className="ml-auto flex items-center gap-1">
+                <NotificationCenter />
                 <Button
                   variant="ghost"
                   size="icon"
@@ -121,9 +168,12 @@ export default function Home() {
             <footer className="border-t py-3 px-4">
               <div className="flex items-center justify-between max-w-[1600px] mx-auto">
                 <div className="flex items-center gap-2">
-                  <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                  </span>
                   <span className="text-xs text-muted-foreground">
-                    InferBench <span className="font-medium">v1.0.0</span>
+                    InferBench <span className="font-semibold text-foreground/80">v1.0.0</span>
                   </span>
                 </div>
                 <span className="text-xs text-muted-foreground/60">

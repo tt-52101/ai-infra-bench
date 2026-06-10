@@ -1,6 +1,6 @@
 'use client'
 
-import { Cpu, LayoutDashboard, Box, SlidersHorizontal, Play, BarChart3, TrendingUp } from 'lucide-react'
+import { Cpu, LayoutDashboard, Box, SlidersHorizontal, Play, BarChart3, TrendingUp, Settings } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '@/lib/store'
 import type { PageKey } from '@/lib/types'
@@ -20,13 +20,14 @@ import {
   SidebarSeparator,
 } from '@/components/ui/sidebar'
 
-const navItems: { key: PageKey; label: string; icon: React.ElementType; badge?: number }[] = [
-  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { key: 'models', label: 'Models', icon: Box },
-  { key: 'parameters', label: 'Parameters', icon: SlidersHorizontal },
-  { key: 'benchmark', label: 'Benchmark', icon: Play, badge: 3 },
-  { key: 'reports', label: 'Reports', icon: BarChart3 },
-  { key: 'analysis', label: 'Analysis', icon: TrendingUp },
+const navItems: { key: PageKey; label: string; icon: React.ElementType; badge?: number; shortcut?: string }[] = [
+  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, shortcut: '⌘1' },
+  { key: 'models', label: 'Models', icon: Box, shortcut: '⌘2' },
+  { key: 'parameters', label: 'Parameters', icon: SlidersHorizontal, shortcut: '⌘3' },
+  { key: 'benchmark', label: 'Benchmark', icon: Play, badge: 3, shortcut: '⌘4' },
+  { key: 'reports', label: 'Reports', icon: BarChart3, shortcut: '⌘5' },
+  { key: 'analysis', label: 'Analysis', icon: TrendingUp, shortcut: '⌘6' },
+  { key: 'settings', label: 'Settings', icon: Settings, shortcut: '⌘7' },
 ]
 
 export function AppSidebar() {
@@ -88,7 +89,7 @@ export function AppSidebar() {
                             animate={{ scaleY: 1, opacity: 1 }}
                             exit={{ scaleY: 0, opacity: 0 }}
                             transition={{ duration: 0.25, ease: 'easeOut' }}
-                            className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-full overflow-hidden"
+                            className="absolute left-0 top-1/2 -translate-y-1/2 h-7 w-[4px] rounded-full overflow-hidden shadow-[0_0_8px_rgba(16,185,129,0.5)]"
                           >
                             <motion.div
                               className="h-full w-full bg-gradient-to-b from-emerald-400 via-emerald-600 to-emerald-400"
@@ -110,6 +111,11 @@ export function AppSidebar() {
                         isActive ? 'text-emerald-600 dark:text-emerald-400' : ''
                       )} />
                       <span className="transition-all duration-300">{item.label}</span>
+                      {item.shortcut && (
+                        <span className="ml-auto text-[10px] text-muted-foreground/50 font-mono group-data-[collapsible=icon]:hidden">
+                          {item.shortcut}
+                        </span>
+                      )}
                       {item.badge !== undefined && (
                         <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white group-data-[collapsible=icon]:hidden">
                           {item.badge}
@@ -126,7 +132,10 @@ export function AppSidebar() {
 
       <SidebarFooter className="px-4 pb-4 border-t border-border/40 pt-3">
         <div className="flex items-center gap-2 px-2 group-data-[collapsible=icon]:justify-center">
-          <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+          </span>
           <span className="text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">v1.0.0 · Inference Engine Platform</span>
         </div>
       </SidebarFooter>

@@ -35,6 +35,7 @@ import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { useResults, useBenchmarks, useModels } from '@/hooks/use-api'
 import type { EngineType, BenchmarkScenario, BenchmarkResultInfo, BenchmarkTaskInfo } from '@/lib/types'
+import { CustomChartTooltip, type TooltipEntry } from '@/components/ui/custom-chart-tooltip'
 
 // ─── Color Constants ─────────────────────────────────────────────
 const VLLM_COLOR = '#10b981'   // emerald-500
@@ -85,34 +86,39 @@ interface ReportResult {
 // ─── Custom Tooltip Components ───────────────────────────────────
 function ThroughputTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number; dataKey: string; color: string }>; label?: string }) {
   if (!active || !payload?.length) return null
+  const entries: TooltipEntry[] = payload.map((p) => ({
+    label: p.dataKey === 'vllm' ? 'VLLM' : 'SGLang',
+    color: p.dataKey === 'vllm' ? VLLM_COLOR : SGLANG_COLOR,
+    value: p.value.toLocaleString(),
+    unit: 'tok/s',
+  }))
   return (
-    <div className="bg-popover border border-border rounded-lg px-3 py-2 shadow-xl text-xs">
-      <p className="font-semibold mb-1">{label}</p>
-      {payload.map((p) => (
-        <div key={p.dataKey} className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
-          <span className="text-muted-foreground">{p.dataKey === 'vllm' ? 'VLLM' : 'SGLang'}:</span>
-          <span className="font-mono font-medium">{p.value.toLocaleString()} tok/s</span>
-        </div>
-      ))}
-    </div>
+    <CustomChartTooltip
+      active={active}
+      payload={payload as Array<{ value: number; dataKey: string; color: string; name: string; payload: Record<string, unknown> }>}
+      label={label}
+      entries={entries}
+      showClickHint
+    />
   )
 }
 
 function ScatterTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: ReportResult }> }) {
   if (!active || !payload?.length) return null
   const d = payload[0].payload
+  const entries: TooltipEntry[] = [
+    { label: d.engine === 'vllm' ? 'VLLM' : 'SGLang', color: d.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR, value: d.throughputTokensPerSec.toLocaleString(), unit: 'tok/s' },
+    { label: 'Latency P99', color: '#ef4444', value: String(d.latencyP99Ms), unit: 'ms' },
+    { label: 'Concurrency', color: '#94a3b8', value: String(d.concurrency) },
+  ]
   return (
-    <div className="bg-popover border border-border rounded-lg px-3 py-2 shadow-xl text-xs">
-      <p className="font-semibold mb-1">{d.model}</p>
-      <div className="flex items-center gap-2 mb-0.5">
-        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR }} />
-        <span className="text-muted-foreground">{d.engine === 'vllm' ? 'VLLM' : 'SGLang'}</span>
-      </div>
-      <div className="text-muted-foreground">Throughput: <span className="text-foreground font-mono">{d.throughputTokensPerSec.toLocaleString()} tok/s</span></div>
-      <div className="text-muted-foreground">Latency P99: <span className="text-foreground font-mono">{d.latencyP99Ms} ms</span></div>
-      <div className="text-muted-foreground">Concurrency: <span className="text-foreground font-mono">{d.concurrency}</span></div>
-    </div>
+    <CustomChartTooltip
+      active={active}
+      payload={[]}
+      label={d.model}
+      entries={entries}
+      showClickHint
+    />
   )
 }
 
@@ -146,11 +152,11 @@ function SkeletonCard() {
   return (
     <Card>
       <CardContent className="p-4">
-        <div className="flex items-center gap-3 animate-pulse">
-          <div className="p-2 rounded-lg bg-muted w-9 h-9" />
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg animate-shimmer w-9 h-9" />
           <div className="space-y-2 flex-1">
-            <div className="h-3 bg-muted rounded w-20" />
-            <div className="h-6 bg-muted rounded w-28" />
+            <div className="h-3 animate-shimmer rounded w-20" />
+            <div className="h-6 animate-shimmer rounded w-28" />
           </div>
         </div>
       </CardContent>
@@ -162,11 +168,11 @@ function SkeletonChart() {
   return (
     <Card>
       <CardHeader>
-        <div className="h-5 bg-muted rounded w-40 animate-pulse" />
-        <div className="h-4 bg-muted rounded w-64 animate-pulse mt-1" />
+        <div className="h-5 animate-shimmer rounded w-40" />
+        <div className="h-4 animate-shimmer rounded w-64 mt-1" />
       </CardHeader>
       <CardContent>
-        <div className="h-[400px] bg-muted/30 rounded animate-pulse flex items-center justify-center">
+        <div className="h-[400px] animate-shimmer rounded flex items-center justify-center">
           <Loader2 className="w-8 h-8 text-muted-foreground animate-spin" />
         </div>
       </CardContent>
@@ -911,8 +917,14 @@ export default function ReportsPage() {
                         <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={60} />
                         <YAxis tick={{ fontSize: 12 }} label={{ value: 'Latency (ms)', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }} />
                         <Tooltip
-                          contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                          formatter={(value: number, name: string) => [`${value} ms`, name]}
+                          content={<CustomChartTooltip
+                            seriesConfig={{
+                              p50: { label: 'P50', color: '#94a3b8', unit: 'ms' },
+                              p90: { label: 'P90', color: '#f59e0b', unit: 'ms' },
+                              p99: { label: 'P99', color: '#ef4444', unit: 'ms' },
+                            }}
+                            showClickHint
+                          />}
                         />
                         <Legend wrapperStyle={{ fontSize: 12 }} />
                         <Bar dataKey="p50" name="P50" fill="#94a3b8" radius={[2, 2, 0, 0]} barSize={10} />
@@ -999,7 +1011,15 @@ export default function ReportsPage() {
                         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                         <XAxis dataKey="model" tick={{ fontSize: 12 }} />
                         <YAxis tick={{ fontSize: 12 }} label={{ value: 'Time (ms)', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }} />
-                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                        <Tooltip content={<CustomChartTooltip
+                          seriesConfig={{
+                            'VLLM TTFT': { label: 'VLLM TTFT', color: VLLM_COLOR, unit: 'ms' },
+                            'SGLang TTFT': { label: 'SGLang TTFT', color: SGLANG_COLOR, unit: 'ms' },
+                            'VLLM TPOT': { label: 'VLLM TPOT', color: '#6ee7b7', unit: 'ms' },
+                            'SGLang TPOT': { label: 'SGLang TPOT', color: '#fcd34d', unit: 'ms' },
+                          }}
+                          showClickHint
+                        />} />
                         <Legend wrapperStyle={{ fontSize: 12 }} />
                         <Bar dataKey="VLLM TTFT" fill={VLLM_COLOR} radius={[3, 3, 0, 0]} barSize={14} />
                         <Bar dataKey="SGLang TTFT" fill={SGLANG_COLOR} radius={[3, 3, 0, 0]} barSize={14} />

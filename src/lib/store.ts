@@ -1,10 +1,14 @@
 import { create } from 'zustand'
-import type { PageKey, ModelInfo, ParameterProfileInfo, BenchmarkTaskInfo, BenchmarkResultInfo, InflectionAnalysisInfo, DashboardStats } from './types'
+import type { PageKey, ModelInfo, ParameterProfileInfo, BenchmarkTaskInfo, BenchmarkResultInfo, InflectionAnalysisInfo, DashboardStats, Notification } from './types'
 
 interface AppState {
   // 导航
   activePage: PageKey
   setActivePage: (page: PageKey) => void
+
+  // 命令面板动作信号
+  pendingAction: string | null
+  setPendingAction: (action: string | null) => void
   
   // 模型
   models: ModelInfo[]
@@ -41,6 +45,14 @@ interface AppState {
   dashboardStats: DashboardStats
   setDashboardStats: (stats: DashboardStats) => void
   
+  // 通知
+  notifications: Notification[]
+  setNotifications: (notifications: Notification[]) => void
+  addNotification: (notification: Notification) => void
+  markAsRead: (id: string) => void
+  markAllAsRead: () => void
+  removeNotification: (id: string) => void
+
   // 加载状态
   loading: boolean
   setLoading: (loading: boolean) => void
@@ -50,6 +62,10 @@ export const useAppStore = create<AppState>((set) => ({
   // 导航
   activePage: 'dashboard',
   setActivePage: (page) => set({ activePage: page }),
+
+  // 命令面板动作信号
+  pendingAction: null,
+  setPendingAction: (action) => set({ pendingAction: action }),
   
   // 模型
   models: [],
@@ -107,6 +123,20 @@ export const useAppStore = create<AppState>((set) => ({
   },
   setDashboardStats: (stats) => set({ dashboardStats: stats }),
   
+  // 通知
+  notifications: [],
+  setNotifications: (notifications) => set({ notifications }),
+  addNotification: (notification) => set((state) => ({ notifications: [notification, ...state.notifications] })),
+  markAsRead: (id) => set((state) => ({
+    notifications: state.notifications.map((n) => n.id === id ? { ...n, read: true } : n)
+  })),
+  markAllAsRead: () => set((state) => ({
+    notifications: state.notifications.map((n) => ({ ...n, read: true }))
+  })),
+  removeNotification: (id) => set((state) => ({
+    notifications: state.notifications.filter((n) => n.id !== id)
+  })),
+
   // 加载状态
   loading: false,
   setLoading: (loading) => set({ loading }),
