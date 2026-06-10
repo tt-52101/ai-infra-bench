@@ -1,0 +1,160 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 推理模型
+model Model {
+  id          String   @id @default(cuid())
+  name        String   // 模型名称 e.g. "Qwen2.5-72B-Instruct"
+  engine      String   // 推理引擎: "vllm" | "sglang"
+  modelPath   String   // 模型路径
+  version     String   @default("1.0.0")
+  status      String   @default("inactive") // "active" | "inactive" | "error"
+  description String   @default("")
+  gpuType     String   @default("") // e.g. "A100-80G"
+  gpuCount    Int      @default(1)
+  maxSeqLen   Int      @default(4096)
+  dtype       String   @default("auto") // "auto" | "float16" | "bfloat16" | "float32"
+  tensorParallelSize Int @default(1)
+  pipelineParallelSize Int @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  benchmarks  BenchmarkTask[]
+  parameterProfiles ParameterProfile[]
+}
+
+// 参数配置模板
+model ParameterProfile {
+  id          String   @id @default(cuid())
+  name        String   // 配置名称 e.g. "高吞吐配置" | "低延迟配置"
+  modelId     String
+  engine      String   // "vllm" | "sglang"
+  
+  // VLLM 核心参数
+  maxModelLen     Int    @default(4096)
+  gpuMemoryUtil   Float  @default(0.9)
+  maxNumSeqs      Int    @default(256)
+  maxNumBatchedTokens Int @default(8192)
+  swapSpace       Int    @default(4)  // GB
+  blockSize       Int    @default(16)
+  quantization    String @default("") // "awq" | "gptq" | "squeezellm" | ""
+  enforceEager    Boolean @default(false)
+  enablePrefixCaching Boolean @default(false)
+  enableChunkedPrefill Boolean @default(false)
+  
+  // SGLang 额外参数
+  memFractionStatic Float @default(0.88)
+  chunkPrefillSize  Int   @default(8192)
+  
+  // 通用参数
+  temperature  Float   @default(0.7)
+  topP         Float   @default(0.9)
+  topK         Int     @default(-1)
+  repetitionPenalty Float @default(1.0)
+  
+  isPreset     Boolean  @default(false) // 是否为预设配置
+  description  String   @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  model        Model    @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  benchmarks   BenchmarkTask[]
+}
+
+// Benchmark 测试任务
+model BenchmarkTask {
+  id          String   @id @default(cuid())
+  name        String   // 任务名称
+  modelId     String
+  profileId   String
+  
+  // 测试场景
+  scenario    String   // "single_stream" | "multi_stream" | "burst" | "serving" | "custom"
+  
+  // 测试参数
+  numRequests     Int    @default(100)
+  inputTokens     Int    @default(128)
+  outputTokens    Int    @default(128)
+  concurrency     Int    @default(1)
+  duration        Int    @default(60) // seconds
+  
+  // 任务状态
+  status      String   @default("pending") // "pending" | "running" | "completed" | "failed"
+  progress    Float    @default(0) // 0-100
+  
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  model       Model             @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  profile     ParameterProfile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  results     BenchmarkResult[]
+}
+
+// Benchmark 测试结果
+model BenchmarkResult {
+  id          String   @id @default(cuid())
+  taskId      String
+  
+  // 核心性能指标
+  throughputTokensPerSec Float @default(0) // 总吞吐量 tokens/s
+  throughputRequestsPerSec Float @default(0) // 请求吞吐量 req/s
+  latencyMeanMs   Float @default(0) // 平均延迟 ms
+  latencyP50Ms    Float @default(0) // P50 延迟
+  latencyP90Ms    Float @default(0) // P90 延迟
+  latencyP99Ms    Float @default(0) // P99 延迟
+  timeToFirstTokenMs Float @default(0) // TTFT
+  timePerOutputTokenMs Float @default(0) // TPOT
+  
+  // 资源指标
+  gpuMemoryUsedGb  Float @default(0) // GPU 显存使用 GB
+  gpuUtilization   Float @default(0) // GPU 利用率 %
+  cpuUtilization   Float @default(0) // CPU 利用率 %
+  
+  // 错误信息
+  errorRate    Float @default(0) // 错误率
+  totalRequests Int  @default(0)
+  successRequests Int @default(0)
+  failedRequests  Int @default(0)
+  
+  // 详细数据 JSON (时序数据等)
+  detailJson   String @default("{}")
+  
+  createdAt   DateTime @default(now())
+
+  task        BenchmarkTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+// 性能拐点分析记录
+model InflectionAnalysis {
+  id          String   @id @default(cuid())
+  modelId     String
+  engine      String
+  
+  // 分析维度
+  dimension   String   // "concurrency" | "batch_size" | "seq_length" | "gpu_memory" | "input_tokens"
+  
+  // 拐点信息
+  inflectionPoint  Float @default(0) // 拐点值
+  optimalValue      Float @default(0) // 最优值
+  performanceGain   Float @default(0) // 性能提升百分比
+  
+  // 分析结果 JSON
+  analysisJson String @default("{}")
+  
+  // 分析状态
+  status      String   @default("pending") // "pending" | "completed" | "failed"
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
