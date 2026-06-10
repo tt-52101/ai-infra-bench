@@ -48,6 +48,7 @@ import {
 
 import { useModels, useResults } from '@/hooks/use-api'
 import { useAppStore } from '@/lib/store'
+import { useI18n } from '@/hooks/use-i18n'
 import type { ModelInfo, EngineType, ModelStatus, BenchmarkResultInfo } from '@/lib/types'
 import ModelComparison from '@/components/models/model-comparison'
 
@@ -198,9 +199,9 @@ function StatusDot({ status }: { status: ModelStatus }) {
     error: 'bg-red-500',
   }
   const labels: Record<ModelStatus, string> = {
-    active: 'Active',
-    inactive: 'Inactive',
-    error: 'Error',
+    active: t('models.filterActive'),
+    inactive: t('models.filterInactive'),
+    error: t('models.filterError'),
   }
   return (
     <Tooltip>
@@ -292,7 +293,7 @@ function ModelCard({
                         <Eye className="size-4" />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>View Details</TooltipContent>
+                    <TooltipContent>{t('models.viewDetails')}</TooltipContent>
                   </Tooltip>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -464,7 +465,7 @@ function ModelFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-0">
         <DialogHeader className="px-6 pt-6 pb-0">
-          <DialogTitle>{isEditing ? 'Edit Model' : 'Add New Model'}</DialogTitle>
+          <DialogTitle>{isEditing ? t('models.editModel') : t('models.addNewModel')}</DialogTitle>
           <DialogDescription>
             {isEditing ? 'Update the model configuration below.' : 'Fill in the details to register a new inference model.'}
           </DialogDescription>
@@ -477,7 +478,7 @@ function ModelFormDialog({
               <div>
                 <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
                   <Box className="size-4" />
-                  Basic Information
+                  {t('models.basicInformation')}
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <FormField
@@ -570,7 +571,7 @@ function ModelFormDialog({
               <div>
                 <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
                   <Cpu className="size-4" />
-                  Hardware Configuration
+                  {t('models.hardwareConfig')}
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <FormField
@@ -650,7 +651,7 @@ function ModelFormDialog({
               <div>
                 <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
                   <Gauge className="size-4" />
-                  Model Configuration
+                  {t('models.modelConfig')}
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <FormField
@@ -757,12 +758,12 @@ function ModelFormDialog({
             ) : isEditing ? (
               <>
                 <Check className="size-4" />
-                Update Model
+                {t('models.updateModel')}
               </>
             ) : (
               <>
                 <Plus className="size-4" />
-                Create Model
+                {t('models.createModel')}
               </>
             )}
           </Button>
@@ -913,7 +914,7 @@ function PerformanceHistorySection({ model }: { model: ModelInfo }) {
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <Activity className="size-4 text-muted-foreground" />
-          <h3 className="text-sm font-semibold">Performance History</h3>
+          <h3 className="text-sm font-semibold">{t('models.performanceHistory')}</h3>
         </div>
         {/* Time Range Selector */}
         <div className="flex items-center gap-1">
@@ -1372,6 +1373,7 @@ function ModelDetailSheet({
 export default function ModelsPage() {
   const { data: models, loading, error, addModel, editModel, removeModel } = useModels()
   const { data: results } = useResults()
+  const { t } = useI18n()
 
   // State
   const [searchQuery, setSearchQuery] = useState('')
@@ -1519,9 +1521,9 @@ export default function ModelsPage() {
       <div className="flex flex-col gap-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Model Management</h1>
+            <h1 className="text-2xl font-bold tracking-tight">{t('models.title')}</h1>
             <p className="text-muted-foreground text-sm mt-1">
-              Manage and configure inference models for VLLM and SGLang engines.
+              {t('models.subtitle')}
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">

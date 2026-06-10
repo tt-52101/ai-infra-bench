@@ -47,6 +47,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { Separator } from '@/components/ui/separator'
+import { useI18n } from '@/hooks/use-i18n'
 
 // ── Settings Interfaces ─────────────────────────────────────────────────────
 
@@ -191,6 +192,7 @@ const cardVariants = {
 // ── Settings Page Component ─────────────────────────────────────────────────
 
 export function SettingsPage() {
+  const { t } = useI18n()
   const [settings, setSettings] = useState<AllSettings>(() => {
     if (typeof window !== 'undefined') return loadSettings()
     return DEFAULT_SETTINGS
@@ -368,9 +370,9 @@ export function SettingsPage() {
           <Settings className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t('settings.title')}</h1>
           <p className="text-sm text-muted-foreground">
-            Configure platform preferences and defaults
+            {t('settings.subtitle')}
           </p>
         </div>
       </motion.div>

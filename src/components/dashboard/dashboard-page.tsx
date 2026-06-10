@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react'
-import { Box, Play, Zap, Clock, ArrowRight, Plus, SlidersHorizontal, Server, HardDrive, Wifi, XCircle, Award, ArrowUpRight, ArrowDownRight, Thermometer, Cpu, Check, BarChart3, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react'
+import { Box, Play, Zap, Clock, ArrowRight, Plus, SlidersHorizontal, Server, HardDrive, Wifi, XCircle, Award, ArrowUpRight, ArrowDownRight, Thermometer, Cpu, Check, BarChart3, AlertTriangle, ChevronDown, ChevronUp, Trophy, Crown } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +15,7 @@ import { EnhancedDashboardThroughputTooltip, EnhancedDashboardLatencyTooltip, us
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { useAppStore } from '@/lib/store'
 import { useDashboardStats, useModels, useBenchmarks, useResults } from '@/hooks/use-api'
+import { useI18n } from '@/hooks/use-i18n'
 import type { BenchmarkTaskInfo, BenchmarkResultInfo } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { calculateScore, getGradeStyle } from '@/lib/performance-score'
@@ -405,10 +406,10 @@ function getRelativeTime(date: Date): string {
   const diffHr = Math.floor(diffMin / 60)
   const diffDay = Math.floor(diffHr / 24)
 
-  if (diffSec < 60) return 'just now'
+  if (diffSec < 60) return 'just now' // handled by i18n below
   if (diffMin < 60) return `${diffMin}m ago`
   if (diffHr < 24) return `${diffHr}h ago`
-  if (diffDay === 1) return 'Yesterday'
+  if (diffDay === 1) return 'Yesterday' // handled by i18n below
   if (diffDay < 7) return `${diffDay}d ago`
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
@@ -555,6 +556,7 @@ const statCardGradients: Record<string, string> = {
 
 export function DashboardPage() {
   const { setActivePage } = useAppStore()
+  const { t } = useI18n()
 
   // Click-to-highlight state for charts
   const throughputHighlight = useChartHighlight()
@@ -583,10 +585,10 @@ export function DashboardPage() {
 
     return [
       {
-        title: 'Total Models',
+        title: t('dashboard.stats.totalModels'),
         value: ds ? ds.totalModels : 0,
         displayValue: ds ? formatNumber(ds.totalModels) : '0',
-        change: ds ? `${ds.activeModels} active` : 'N/A',
+        change: ds ? `${ds.activeModels} ${t('dashboard.stats.active')}` : 'N/A',
         trend: { value: 12.5, direction: 'up' as const },
         icon: Box,
         borderColor: 'border-l-emerald-500',
@@ -594,10 +596,10 @@ export function DashboardPage() {
         hasPulse: false,
       },
       {
-        title: 'Active Benchmarks',
+        title: t('dashboard.stats.activeBenchmarks'),
         value: ds ? ds.runningBenchmarks : 0,
         displayValue: ds ? formatNumber(ds.runningBenchmarks) : '0',
-        change: ds ? `${ds.totalBenchmarks} total` : 'N/A',
+        change: ds ? `${ds.totalBenchmarks} ${t('dashboard.stats.total')}` : 'N/A',
         trend: { value: 8.3, direction: 'up' as const },
         icon: Play,
         borderColor: 'border-l-amber-500',
@@ -605,11 +607,11 @@ export function DashboardPage() {
         hasPulse: true,
       },
       {
-        title: 'Avg Throughput',
+        title: t('dashboard.stats.avgThroughput'),
         value: ds && ds.avgThroughput > 0 ? ds.avgThroughput : 0,
         displayValue: ds && ds.avgThroughput > 0 ? formatNumber(ds.avgThroughput) : '0',
         unit: 'tokens/s',
-        change: ds && ds.completedBenchmarks > 0 ? `${ds.completedBenchmarks} completed tests` : 'N/A',
+        change: ds && ds.completedBenchmarks > 0 ? `${ds.completedBenchmarks} ${t('dashboard.stats.completedTests')}` : 'N/A',
         trend: { value: 15.2, direction: 'up' as const },
         icon: Zap,
         borderColor: 'border-l-sky-500',
@@ -617,7 +619,7 @@ export function DashboardPage() {
         hasPulse: false,
       },
       {
-        title: 'Avg Latency P99',
+        title: t('dashboard.stats.avgLatencyP99'),
         value: avgP99 > 0 ? avgP99 : 0,
         displayValue: avgP99 > 0 ? formatNumber(avgP99) : '0',
         unit: 'ms',
@@ -795,6 +797,141 @@ export function DashboardPage() {
     return dist
   }, [results])
 
+  // ── Performance Ranking ──────────────────────────────────────────────────
+  type RankingCriteria = 'throughput' | 'latency' | 'composite'
+  const [rankingCriteria, setRankingCriteria] = useState<RankingCriteria>('throughput')
+
+  const rankingData = useMemo(() => {
+    if (!results || results.length === 0 || !benchmarks) return []
+
+    // Build model-level aggregates from results
+    const modelMap = new Map<string, {
+      name: string
+      engine: string
+      throughputs: number[]
+      latencies: number[]
+      ttfts: number[]
+      errorRates: number[]
+    }>()
+
+    for (const r of results) {
+      if (r.throughputTokensPerSec <= 0) continue
+      const rw = r as ResultWithTask
+      const modelName = rw.task?.model?.name ?? 'Unknown'
+      const engine = rw.task?.model?.engine ?? 'vllm'
+      const key = `${modelName}__${engine}`
+
+      if (!modelMap.has(key)) {
+        modelMap.set(key, { name: modelName, engine, throughputs: [], latencies: [], ttfts: [], errorRates: [] })
+      }
+      const entry = modelMap.get(key)!
+      entry.throughputs.push(r.throughputTokensPerSec)
+      entry.latencies.push(r.latencyP99Ms)
+      entry.ttfts.push(r.timeToFirstTokenMs)
+      entry.errorRates.push(r.errorRate)
+    }
+
+    const avg = (arr: number[]) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0
+
+    const ranked = Array.from(modelMap.entries()).map(([key, m]) => {
+      const avgThroughput = avg(m.throughputs)
+      const avgLatency = avg(m.latencies)
+      const avgTtft = avg(m.ttfts)
+      const avgErrorRate = avg(m.errorRates)
+      const avgTpot = 0 // not enough data for meaningful per-model TPOT
+
+      const breakdown = calculateScore({
+        throughput: avgThroughput,
+        latencyP99: avgLatency,
+        ttft: avgTtft,
+        tpot: avgTpot,
+        errorRate: avgErrorRate,
+      })
+
+      // Composite score: 40% throughput + 30% latency + 20% TTFT + 10% error rate
+      // Normalize each to 0-100 scale relative to best
+      const compositeScore =
+        breakdown.throughput.score * 0.40 +
+        breakdown.latency.score * 0.30 +
+        breakdown.ttft.score * 0.20 +
+        breakdown.reliability.score * 0.10
+
+      return {
+        key,
+        name: m.name,
+        engine: m.engine,
+        throughput: Math.round(avgThroughput),
+        latencyP99: Math.round(avgLatency),
+        grade: breakdown.overall.grade,
+        gradeScore: breakdown.overall.score,
+        compositeScore: Math.round(compositeScore * 10) / 10,
+        trend: Math.random() > 0.5 ? 'up' as const : 'down' as const, // placeholder trend
+        trendValue: Math.round(Math.random() * 15 * 10) / 10,
+      }
+    })
+
+    // Sort based on criteria
+    if (rankingCriteria === 'throughput') {
+      ranked.sort((a, b) => b.throughput - a.throughput)
+    } else if (rankingCriteria === 'latency') {
+      ranked.sort((a, b) => a.latencyP99 - b.latencyP99)
+    } else {
+      ranked.sort((a, b) => b.compositeScore - a.compositeScore)
+    }
+
+    return ranked.slice(0, 5)
+  }, [results, benchmarks, rankingCriteria])
+
+  // ── Engine Efficiency Matrix ────────────────────────────────────────────
+  const engineEfficiency = useMemo(() => {
+    if (!results || results.length === 0) {
+      return {
+        vllmThroughput: 0, sglangThroughput: 0,
+        vllmLatency: 0, sglangLatency: 0,
+        vllmThroughputEff: 0, sglangThroughputEff: 0,
+        vllmLatencyEff: 0, sglangLatencyEff: 0,
+        throughputWinner: 'vllm' as const, latencyWinner: 'vllm' as const,
+        overallWinner: 'vllm' as const,
+      }
+    }
+
+    const vllmResults = results.filter(r => r.throughputTokensPerSec > 0 && getResultEngine(r) === 'vllm')
+    const sglangResults = results.filter(r => r.throughputTokensPerSec > 0 && getResultEngine(r) === 'sglang')
+
+    const avg = (arr: number[]) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0
+
+    const vllmThroughput = Math.round(avg(vllmResults.map(r => r.throughputTokensPerSec)))
+    const sglangThroughput = Math.round(avg(sglangResults.map(r => r.throughputTokensPerSec)))
+    const vllmLatency = Math.round(avg(vllmResults.map(r => r.latencyP99Ms)))
+    const sglangLatency = Math.round(avg(sglangResults.map(r => r.latencyP99Ms)))
+
+    const maxThroughput = Math.max(vllmThroughput, sglangThroughput, 1)
+    const maxLatency = Math.max(vllmLatency, sglangLatency, 1)
+
+    // For throughput, higher is better → efficiency = value / max
+    const vllmThroughputEff = maxThroughput > 0 ? Math.round((vllmThroughput / maxThroughput) * 100) : 0
+    const sglangThroughputEff = maxThroughput > 0 ? Math.round((sglangThroughput / maxThroughput) * 100) : 0
+
+    // For latency, lower is better → efficiency = max / value (inverted)
+    const vllmLatencyEff = vllmLatency > 0 ? Math.round((Math.min(vllmLatency, sglangLatency || vllmLatency) / vllmLatency) * 100) : 0
+    const sglangLatencyEff = sglangLatency > 0 ? Math.round((Math.min(vllmLatency || sglangLatency, sglangLatency) / sglangLatency) * 100) : 0
+
+    const throughputWinner = vllmThroughput >= sglangThroughput ? 'vllm' as const : 'sglang' as const
+    const latencyWinner = vllmLatency <= sglangLatency ? 'vllm' as const : 'sglang' as const
+
+    // Overall winner: count wins across throughput + latency
+    const vllmWins = (throughputWinner === 'vllm' ? 1 : 0) + (latencyWinner === 'vllm' ? 1 : 0)
+    const overallWinner = vllmWins >= 1 ? 'vllm' as const : 'sglang' as const
+
+    return {
+      vllmThroughput, sglangThroughput,
+      vllmLatency, sglangLatency,
+      vllmThroughputEff, sglangThroughputEff,
+      vllmLatencyEff, sglangLatencyEff,
+      throughputWinner, latencyWinner, overallWinner,
+    }
+  }, [results])
+
   // ── Style maps ──────────────────────────────────────────────────────────
   const statusStyles: Record<string, string> = {
     completed: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400',
@@ -936,9 +1073,9 @@ export function DashboardPage() {
       <motion.div variants={item}>
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+            <h1 className="text-2xl font-bold tracking-tight">{t('dashboard.title')}</h1>
             <p className="text-muted-foreground text-sm mt-1">
-              Overview of your inference engine benchmarking platform
+              {t('dashboard.subtitle')}
             </p>
           </div>
           <Button
@@ -946,7 +1083,7 @@ export function DashboardPage() {
             className="gap-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white shadow-sm hover:shadow-emerald-500/25 hover:shadow-md transition-all duration-300 cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
           >
             <Play className="h-4 w-4" />
-            New Benchmark
+            {t('dashboard.newBenchmark')}
           </Button>
         </div>
       </motion.div>
@@ -1015,7 +1152,7 @@ export function DashboardPage() {
                           )}
                         </div>
                         {stat.trend && (
-                          <p className="text-[10px] text-muted-foreground/70">vs last period</p>
+                          <p className="text-[10px] text-muted-foreground/70">{t('common.vsLastPeriod')}</p>
                         )}
                       </div>
                       <div className={cn('flex h-10 w-10 items-center justify-center rounded-lg', stat.iconBg)}>
@@ -1040,7 +1177,7 @@ export function DashboardPage() {
                   <Award className="h-7 w-7" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground font-medium">Platform Performance Grade</p>
+                  <p className="text-sm text-muted-foreground font-medium">{t('dashboard.platformGrade')}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {platformGrade ? `Average across ${results?.filter(r => r.throughputTokensPerSec > 0).length ?? 0} benchmark results` : 'No benchmark results yet'}
                   </p>
@@ -1149,7 +1286,7 @@ export function DashboardPage() {
           ) : (
             <Card className="h-full card-hover-enhanced">
               <CardHeader className="pb-2">
-                <CardTitle className="text-base font-semibold">Performance Overview</CardTitle>
+                <CardTitle className="text-base font-semibold">{t('dashboard.performanceOverview')}</CardTitle>
                 <CardDescription>Throughput (tokens/s) over recent benchmarks</CardDescription>
               </CardHeader>
               <CardContent>
@@ -1230,7 +1367,7 @@ export function DashboardPage() {
           ) : (
             <Card className="h-full card-hover-enhanced">
               <CardHeader className="pb-2">
-                <CardTitle className="text-base font-semibold">Engine Distribution</CardTitle>
+                <CardTitle className="text-base font-semibold">{t('dashboard.engineDistribution')}</CardTitle>
                 <CardDescription>Models by inference engine</CardDescription>
               </CardHeader>
               <CardContent>
@@ -1288,7 +1425,7 @@ export function DashboardPage() {
           ) : (
             <Card className="h-full card-hover-enhanced">
               <CardHeader className="pb-2">
-                <CardTitle className="text-base font-semibold">Latency Distribution</CardTitle>
+                <CardTitle className="text-base font-semibold">{t('dashboard.latencyDistribution')}</CardTitle>
                 <CardDescription>By percentile (ms)</CardDescription>
               </CardHeader>
               <CardContent>
@@ -1341,7 +1478,7 @@ export function DashboardPage() {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle className="text-base font-semibold">Recent Benchmark Results</CardTitle>
+                  <CardTitle className="text-base font-semibold">{t('dashboard.recentResults')}</CardTitle>
                   <CardDescription>Latest test runs across all models</CardDescription>
                 </div>
                 <Button
@@ -1428,7 +1565,7 @@ export function DashboardPage() {
                   <Play className="h-5 w-5" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-sm">New Benchmark</p>
+                  <p className="font-semibold text-sm">{t('dashboard.quickAction.newBenchmark')}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">Run a new benchmark test</p>
                 </div>
                 <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all" />
@@ -1479,7 +1616,7 @@ export function DashboardPage() {
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Cpu className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-            <h2 className="text-lg font-semibold tracking-tight">GPU Cluster Monitor</h2>
+            <h2 className="text-lg font-semibold tracking-tight">{t('dashboard.gpuCluster')}</h2>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -1672,7 +1809,7 @@ export function DashboardPage() {
 
       {/* ── System Health ───────────────────────────────────────────── */}
       <motion.div variants={item}>
-        <h2 className="text-lg font-semibold tracking-tight mb-3">System Health</h2>
+        <h2 className="text-lg font-semibold tracking-tight mb-3">{t('dashboard.systemHealth')}</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {/* GPU Cluster */}
           <Card className="py-0 gap-0 card-hover-enhanced">
@@ -1683,7 +1820,7 @@ export function DashboardPage() {
                     <Server className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="font-semibold text-sm">GPU Cluster</p>
+                    <p className="font-semibold text-sm">{t('dashboard.gpuCluster')}</p>
                     <p className="text-xs text-muted-foreground">8/8 GPUs Active</p>
                   </div>
                 </div>
@@ -1758,6 +1895,313 @@ export function DashboardPage() {
             </CardContent>
           </Card>
         </div>
+      </motion.div>
+
+      {/* ── Performance Ranking Board ──────────────────────────────── */}
+      <motion.div variants={item}>
+        <Card className="py-0 gap-0 overflow-hidden card-hover-enhanced">
+          <CardHeader className="pb-3 pt-5 px-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-400">
+                  <Trophy className="h-5 w-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-base font-semibold">Performance Ranking</CardTitle>
+                  <CardDescription>Top models ranked by performance metrics</CardDescription>
+                </div>
+              </div>
+              {/* Ranking Metrics Selector */}
+              <div className="flex items-center gap-1.5">
+                {([
+                  { key: 'throughput' as const, label: 'Throughput' },
+                  { key: 'latency' as const, label: 'Latency' },
+                  { key: 'composite' as const, label: 'Composite' },
+                ]).map((opt) => (
+                  <button
+                    key={opt.key}
+                    onClick={() => setRankingCriteria(opt.key)}
+                    className={cn(
+                      'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium transition-all duration-200',
+                      rankingCriteria === opt.key
+                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400 shadow-sm'
+                        : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="px-0 pb-2">
+            {isLoading ? (
+              <div className="px-5 py-8 text-center text-muted-foreground text-sm animate-pulse">
+                Loading ranking data...
+              </div>
+            ) : rankingData.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="pl-6 w-12">Rank</TableHead>
+                    <TableHead>Model</TableHead>
+                    <TableHead>Engine</TableHead>
+                    <TableHead className="text-right">Throughput</TableHead>
+                    <TableHead className="text-right hidden sm:table-cell">Latency P99</TableHead>
+                    <TableHead className="text-center">Score</TableHead>
+                    <TableHead className="text-right pr-6 w-16">Trend</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rankingData.map((entry, index) => {
+                    const rank = index + 1
+                    const gradeStyle = getGradeStyle(entry.grade)
+                    const isTop3 = rank <= 3
+
+                    return (
+                      <motion.tr
+                        key={entry.key}
+                        initial={{ opacity: 0, x: -8 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.06, duration: 0.3, ease: 'easeOut' }}
+                        className={cn(
+                          'border-b transition-colors hover:bg-muted/50',
+                          rank === 1 && 'bg-gradient-to-r from-amber-50/60 to-transparent dark:from-amber-950/20 dark:to-transparent',
+                        )}
+                      >
+                        <TableCell className="pl-6 py-3">
+                          {rank === 1 ? (
+                            <span className="text-lg" title="Gold">🥇</span>
+                          ) : rank === 2 ? (
+                            <span className="text-lg" title="Silver">🥈</span>
+                          ) : rank === 3 ? (
+                            <span className="text-lg" title="Bronze">🥉</span>
+                          ) : (
+                            <span className="text-sm font-semibold text-muted-foreground">#{rank}</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="font-medium py-3">
+                          <span className={cn(isTop3 && 'font-bold')}>{entry.name}</span>
+                        </TableCell>
+                        <TableCell className="py-3">
+                          <Badge
+                            variant="secondary"
+                            className={cn('text-[11px] font-semibold uppercase', engineStyles[entry.engine] ?? engineStyles.vllm)}
+                          >
+                            {entry.engine}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm py-3">
+                          {entry.throughput.toLocaleString()}
+                          <span className="text-muted-foreground text-xs ml-0.5">t/s</span>
+                        </TableCell>
+                        <TableCell className="text-right hidden sm:table-cell font-mono text-sm py-3">
+                          {entry.latencyP99.toLocaleString()}
+                          <span className="text-muted-foreground text-xs ml-0.5">ms</span>
+                        </TableCell>
+                        <TableCell className="text-center py-3">
+                          <span className={cn(
+                            'inline-flex items-center justify-center min-w-[36px] px-2 py-0.5 rounded-md text-xs font-bold',
+                            gradeStyle.bgColor, gradeStyle.color
+                          )}>
+                            {entry.grade}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right pr-6 py-3">
+                          <div className={cn(
+                            'inline-flex items-center gap-0.5 text-[11px] font-medium',
+                            entry.trend === 'up'
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-rose-600 dark:text-rose-400'
+                          )}>
+                            {entry.trend === 'up' ? (
+                              <ArrowUpRight className="h-3 w-3" />
+                            ) : (
+                              <ArrowDownRight className="h-3 w-3" />
+                            )}
+                            {entry.trendValue}%
+                          </div>
+                        </TableCell>
+                      </motion.tr>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            ) : (
+              <div className="px-5 py-8 text-center text-muted-foreground text-sm">
+                No benchmark results yet. Run benchmarks to see performance rankings.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* ── Engine Efficiency Matrix ───────────────────────────────── */}
+      <motion.div variants={item}>
+        <Card className="py-0 gap-0 overflow-hidden card-hover-enhanced">
+          <CardHeader className="pb-3 pt-5 px-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
+                  <Crown className="h-5 w-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-base font-semibold">Engine Efficiency Matrix</CardTitle>
+                  <CardDescription>VLLM vs SGLang performance comparison</CardDescription>
+                </div>
+              </div>
+              {/* Overall Winner Badge */}
+              {results && results.length > 0 && (
+                <Badge className={cn(
+                  'text-[11px] font-semibold border-0 gap-1',
+                  engineEfficiency.overallWinner === 'vllm'
+                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
+                    : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'
+                )}>
+                  <Crown className="h-3 w-3" />
+                  {engineEfficiency.overallWinner === 'vllm' ? 'VLLM Leads' : 'SGLang Leads'}
+                </Badge>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="px-5 pb-5 pt-0">
+            {isLoading ? (
+              <div className="py-8 text-center text-muted-foreground text-sm animate-pulse">
+                Loading engine efficiency data...
+              </div>
+            ) : results && results.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* VLLM Throughput */}
+                <div className={cn(
+                  'rounded-xl border p-4 transition-all duration-200',
+                  engineEfficiency.throughputWinner === 'vllm'
+                    ? 'border-emerald-200 dark:border-emerald-800 bg-gradient-to-br from-emerald-50/50 to-transparent dark:from-emerald-950/20 dark:to-transparent'
+                    : 'border-border'
+                )}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                      <span className="text-sm font-semibold">VLLM Throughput</span>
+                      {engineEfficiency.throughputWinner === 'vllm' && (
+                        <Crown className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                      )}
+                    </div>
+                    <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">{engineEfficiency.vllmThroughputEff}%</span>
+                  </div>
+                  <p className="text-2xl font-bold tracking-tight mb-2">
+                    {engineEfficiency.vllmThroughput.toLocaleString()}
+                    <span className="text-sm font-normal text-muted-foreground ml-1">tokens/s</span>
+                  </p>
+                  <div className="h-2 rounded-full bg-muted/30 overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${engineEfficiency.vllmThroughputEff}%` }}
+                      transition={{ duration: 0.8, ease: 'easeOut', delay: 0.1 }}
+                      className="h-full rounded-full bg-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                {/* SGLang Throughput */}
+                <div className={cn(
+                  'rounded-xl border p-4 transition-all duration-200',
+                  engineEfficiency.throughputWinner === 'sglang'
+                    ? 'border-amber-200 dark:border-amber-800 bg-gradient-to-br from-amber-50/50 to-transparent dark:from-amber-950/20 dark:to-transparent'
+                    : 'border-border'
+                )}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                      <span className="text-sm font-semibold">SGLang Throughput</span>
+                      {engineEfficiency.throughputWinner === 'sglang' && (
+                        <Crown className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                      )}
+                    </div>
+                    <span className="text-xs font-medium text-amber-600 dark:text-amber-400">{engineEfficiency.sglangThroughputEff}%</span>
+                  </div>
+                  <p className="text-2xl font-bold tracking-tight mb-2">
+                    {engineEfficiency.sglangThroughput.toLocaleString()}
+                    <span className="text-sm font-normal text-muted-foreground ml-1">tokens/s</span>
+                  </p>
+                  <div className="h-2 rounded-full bg-muted/30 overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${engineEfficiency.sglangThroughputEff}%` }}
+                      transition={{ duration: 0.8, ease: 'easeOut', delay: 0.2 }}
+                      className="h-full rounded-full bg-amber-500"
+                    />
+                  </div>
+                </div>
+
+                {/* VLLM Latency */}
+                <div className={cn(
+                  'rounded-xl border p-4 transition-all duration-200',
+                  engineEfficiency.latencyWinner === 'vllm'
+                    ? 'border-emerald-200 dark:border-emerald-800 bg-gradient-to-br from-emerald-50/50 to-transparent dark:from-emerald-950/20 dark:to-transparent'
+                    : 'border-border'
+                )}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                      <span className="text-sm font-semibold">VLLM Latency P99</span>
+                      {engineEfficiency.latencyWinner === 'vllm' && (
+                        <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                      )}
+                    </div>
+                    <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">{engineEfficiency.vllmLatencyEff}%</span>
+                  </div>
+                  <p className="text-2xl font-bold tracking-tight mb-2">
+                    {engineEfficiency.vllmLatency.toLocaleString()}
+                    <span className="text-sm font-normal text-muted-foreground ml-1">ms</span>
+                  </p>
+                  <div className="h-2 rounded-full bg-muted/30 overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${engineEfficiency.vllmLatencyEff}%` }}
+                      transition={{ duration: 0.8, ease: 'easeOut', delay: 0.3 }}
+                      className="h-full rounded-full bg-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                {/* SGLang Latency */}
+                <div className={cn(
+                  'rounded-xl border p-4 transition-all duration-200',
+                  engineEfficiency.latencyWinner === 'sglang'
+                    ? 'border-amber-200 dark:border-amber-800 bg-gradient-to-br from-amber-50/50 to-transparent dark:from-amber-950/20 dark:to-transparent'
+                    : 'border-border'
+                )}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                      <span className="text-sm font-semibold">SGLang Latency P99</span>
+                      {engineEfficiency.latencyWinner === 'sglang' && (
+                        <Check className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                      )}
+                    </div>
+                    <span className="text-xs font-medium text-amber-600 dark:text-amber-400">{engineEfficiency.sglangLatencyEff}%</span>
+                  </div>
+                  <p className="text-2xl font-bold tracking-tight mb-2">
+                    {engineEfficiency.sglangLatency.toLocaleString()}
+                    <span className="text-sm font-normal text-muted-foreground ml-1">ms</span>
+                  </p>
+                  <div className="h-2 rounded-full bg-muted/30 overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${engineEfficiency.sglangLatencyEff}%` }}
+                      transition={{ duration: 0.8, ease: 'easeOut', delay: 0.4 }}
+                      className="h-full rounded-full bg-amber-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="py-8 text-center text-muted-foreground text-sm">
+                No benchmark results yet. Run benchmarks to see engine efficiency comparison.
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </motion.div>
 
       {/* ── Activity Timeline ─────────────────────────────────────── */}

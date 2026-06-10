@@ -2,9 +2,10 @@
 
 import React, { useEffect } from 'react'
 import { useTheme } from 'next-themes'
-import { Sun, Moon } from 'lucide-react'
+import { Sun, Moon, Globe } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useAppStore } from '@/lib/store'
+import { I18nProvider, useI18n } from '@/hooks/use-i18n'
 import type { PageKey } from '@/lib/types'
 import { DashboardPage } from '@/components/dashboard/dashboard-page'
 import ModelsPage from '@/components/models/models-page'
@@ -32,14 +33,17 @@ import {
   BreadcrumbPage,
 } from '@/components/ui/breadcrumb'
 
-const PAGE_TITLES: Record<PageKey, string> = {
-  dashboard: 'Dashboard',
-  models: 'Model Management',
-  parameters: 'Parameter Tuning',
-  benchmark: 'Benchmark Testing',
-  reports: 'Performance Reports',
-  analysis: 'Inflection Point Analysis',
-  settings: 'Settings',
+function usePageTitles() {
+  const { t } = useI18n()
+  return {
+    dashboard: t('page.dashboard'),
+    models: t('page.models'),
+    parameters: t('page.parameters'),
+    benchmark: t('page.benchmark'),
+    reports: t('page.reports'),
+    analysis: t('page.analysis'),
+    settings: t('page.settings'),
+  } as Record<PageKey, string>
 }
 
 function PageContent({ page }: { page: PageKey }) {
@@ -85,9 +89,11 @@ function GradientTopBar() {
   )
 }
 
-export default function Home() {
+function HomeContent() {
   const { activePage, setActivePage } = useAppStore()
   const { theme, setTheme } = useTheme()
+  const { t, locale, setLocale } = useI18n()
+  const PAGE_TITLES = usePageTitles()
 
   // Keyboard shortcuts: Cmd+1-6 (or Ctrl+1-6) for sidebar navigation
   useEffect(() => {
@@ -154,6 +160,17 @@ export default function Home() {
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
+                  onClick={() => setLocale(locale === 'en' ? 'zh' : 'en')}
+                  aria-label={locale === 'en' ? '切换到中文' : 'Switch to English'}
+                  title={locale === 'en' ? '切换中文' : 'Switch to English'}
+                >
+                  <Globe className="h-4 w-4" />
+                  <span className="text-[10px] font-bold ml-0.5">{locale === 'en' ? '中' : 'EN'}</span>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
                   onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
                   aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
                 >
@@ -179,10 +196,10 @@ export default function Home() {
                   </span>
                 </div>
                 <span className="text-xs text-muted-foreground/60">
-                  VLLM / SGLang Inference Engine Adaptation Platform
+                  {t('footer.platform')}
                 </span>
                 <span className="text-xs text-muted-foreground/50">
-                  Powered by <span className="font-medium text-muted-foreground/70">InferBench Pro</span>
+                  {t('footer.poweredBy')} <span className="font-medium text-muted-foreground/70">InferBench Pro</span>
                 </span>
               </div>
             </footer>
@@ -192,5 +209,13 @@ export default function Home() {
       <AIChatWidget />
       <KeyboardShortcutsHelp />
     </SidebarProvider>
+  )
+}
+
+export default function Home() {
+  return (
+    <I18nProvider>
+      <HomeContent />
+    </I18nProvider>
   )
 }

@@ -1,9 +1,10 @@
 'use client'
 
-import { Cpu, LayoutDashboard, Box, SlidersHorizontal, Play, BarChart3, TrendingUp, Settings } from 'lucide-react'
+import { Cpu, LayoutDashboard, Box, SlidersHorizontal, Play, BarChart3, TrendingUp, Settings, Globe } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '@/lib/store'
+import { useI18n } from '@/hooks/use-i18n'
 import type { PageKey } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import {
@@ -20,19 +21,25 @@ import {
   SidebarRail,
   SidebarSeparator,
 } from '@/components/ui/sidebar'
+import { Button } from '@/components/ui/button'
 
-const navItems: { key: PageKey; label: string; icon: React.ElementType; badge?: number; shortcut?: string }[] = [
-  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, shortcut: '⌘1' },
-  { key: 'models', label: 'Models', icon: Box, shortcut: '⌘2' },
-  { key: 'parameters', label: 'Parameters', icon: SlidersHorizontal, shortcut: '⌘3' },
-  { key: 'benchmark', label: 'Benchmark', icon: Play, badge: 3, shortcut: '⌘4' },
-  { key: 'reports', label: 'Reports', icon: BarChart3, shortcut: '⌘5' },
-  { key: 'analysis', label: 'Analysis', icon: TrendingUp, shortcut: '⌘6' },
-  { key: 'settings', label: 'Settings', icon: Settings, shortcut: '⌘7' },
-]
+function useNavItems() {
+  const { t } = useI18n()
+  return [
+    { key: 'dashboard' as PageKey, label: t('nav.dashboard'), icon: LayoutDashboard, shortcut: '⌘1' },
+    { key: 'models' as PageKey, label: t('nav.models'), icon: Box, shortcut: '⌘2' },
+    { key: 'parameters' as PageKey, label: t('nav.parameters'), icon: SlidersHorizontal, shortcut: '⌘3' },
+    { key: 'benchmark' as PageKey, label: t('nav.benchmark'), icon: Play, badge: 3, shortcut: '⌘4' },
+    { key: 'reports' as PageKey, label: t('nav.reports'), icon: BarChart3, shortcut: '⌘5' },
+    { key: 'analysis' as PageKey, label: t('nav.analysis'), icon: TrendingUp, shortcut: '⌘6' },
+    { key: 'settings' as PageKey, label: t('nav.settings'), icon: Settings, shortcut: '⌘7' },
+  ]
+}
 
 export function AppSidebar() {
   const { activePage, setActivePage } = useAppStore()
+  const { t, locale, setLocale } = useI18n()
+  const navItems = useNavItems()
 
   return (
     <Sidebar
@@ -61,7 +68,7 @@ export function AppSidebar() {
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupLabel className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70 px-3">
-            Navigation
+            {t('nav.navigation')}
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -148,7 +155,17 @@ export function AppSidebar() {
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
             <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
           </span>
-          <span className="text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">v1.0.0 · Inference Engine Platform</span>
+          <span className="text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">v1.0.0 · {t('nav.inferenceEnginePlatform')}</span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 group-data-[collapsible=icon]:hidden ml-auto"
+            onClick={() => setLocale(locale === 'en' ? 'zh' : 'en')}
+            title={locale === 'en' ? '切换中文' : 'Switch to English'}
+          >
+            <Globe className="h-3.5 w-3.5" />
+            <span className="text-[9px] font-bold ml-0.5">{locale === 'en' ? '中' : 'EN'}</span>
+          </Button>
         </div>
       </SidebarFooter>
 

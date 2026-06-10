@@ -35,6 +35,7 @@ import {
 } from 'recharts'
 import type { EngineType, ParameterProfileInfo } from '@/lib/types'
 import { useProfiles, useModels } from '@/hooks/use-api'
+import { useI18n } from '@/hooks/use-i18n'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
@@ -476,6 +477,7 @@ function SkeletonTableRow() {
 export default function ParametersPage() {
   const { data: profiles, loading: profilesLoading, error: profilesError, addProfile, editProfile, removeProfile } = useProfiles()
   const { data: models, loading: modelsLoading, error: modelsError } = useModels()
+  const { t } = useI18n()
 
   // ── State ──
   const [selectedModelId, setSelectedModelId] = useState<string>('')
@@ -740,14 +742,14 @@ export default function ParametersPage() {
               <div>
                 <h1 className="text-2xl md:text-3xl font-bold tracking-tight flex items-center gap-2">
                   <SlidersHorizontal className="size-7 text-primary" />
-                  Parameter Tuning
+                  {t('parameters.title')}
                 </h1>
-                <p className="text-muted-foreground mt-1">Configure and optimize inference parameters for your models</p>
+                <p className="text-muted-foreground mt-1">{t('parameters.subtitle')}</p>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <Button variant="outline" size="sm" onClick={importPresets} disabled={isLoading}>
                   <Download className="size-4" />
-                  Import Presets
+                  {t('parameters.importPresets')}
                 </Button>
                 <Button size="sm" onClick={() => {
                   setEditingProfileId(null)
@@ -756,7 +758,7 @@ export default function ParametersPage() {
                   setSaveDialogOpen(true)
                 }}>
                   <Plus className="size-4" />
-                  New Profile
+                  {t('parameters.newProfile')}
                 </Button>
               </div>
             </div>
@@ -826,7 +828,7 @@ export default function ParametersPage() {
 
             {/* ── Preset Profiles ── */}
             <div>
-              <h2 className="text-lg font-semibold mb-3">Preset Profiles</h2>
+              <h2 className="text-lg font-semibold mb-3">{t('parameters.presetProfiles')}</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {PRESET_PROFILES.map((preset, idx) => (
                   <Card key={idx} className="hover:shadow-md transition-shadow">
@@ -861,10 +863,10 @@ export default function ParametersPage() {
             {/* ── Parameter Configuration Form ── */}
             <div>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold">Parameter Configuration</h2>
+                <h2 className="text-lg font-semibold">{t('parameters.parameterConfig')}</h2>
                 <Button variant="ghost" size="sm" onClick={resetParams}>
                   <RotateCcw className="size-4" />
-                  Reset to Defaults
+                  {t('parameters.resetToDefaults')}
                 </Button>
               </div>
 

@@ -54,6 +54,7 @@ import {
 import { useBenchmarks, useResults, useModels, useProfiles } from '@/hooks/use-api'
 import { useBenchmarkWS, type BenchmarkProgress, type BenchmarkComplete } from '@/hooks/use-benchmark-ws'
 import { useAppStore } from '@/lib/store'
+import { useI18n } from '@/hooks/use-i18n'
 import { toast } from 'sonner'
 import type {
   BenchmarkTaskInfo, BenchmarkResultInfo, BenchmarkScenario,
@@ -314,6 +315,7 @@ export default function BenchmarkPage() {
   const { data: results, addResult } = useResults()
   const { data: models } = useModels()
   const { data: profiles } = useProfiles()
+  const { t } = useI18n()
 
   // WebSocket connection for real-time benchmark progress
   const ws = useBenchmarkWS()
@@ -875,10 +877,10 @@ export default function BenchmarkPage() {
             <div className="flex items-center gap-3">
               <div>
                 <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-                  Benchmark Testing
+                  {t('benchmark.title')}
                 </h1>
                 <p className="text-muted-foreground mt-1 text-sm">
-                  Evaluate model performance across different scenarios and configurations
+                  {t('benchmark.subtitle')}
                 </p>
               </div>
               {/* WebSocket connection indicator */}
@@ -904,32 +906,32 @@ export default function BenchmarkPage() {
               </Tooltip>
             </div>
             <Button onClick={() => setConfigOpen(true)} size="lg" className="shrink-0 cursor-pointer bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white shadow-sm hover:shadow-emerald-500/25 hover:shadow-md transition-all duration-300 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2">
-              <Plus className="size-4" /> New Benchmark
+              <Plus className="size-4" /> {t('benchmark.newBenchmark')}
             </Button>
           </div>
 
           {/* Stats Bar */}
           <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatsCard
-              title="Total Tests"
+              title={t('benchmark.totalTests')}
               value={stats.total}
               icon={<BarChart3 className="size-5 text-slate-600" />}
               color="bg-slate-100"
             />
             <StatsCard
-              title="Running"
+              title={t('benchmark.running')}
               value={stats.running}
               icon={<Activity className="size-5 text-blue-600" />}
               color="bg-blue-50"
             />
             <StatsCard
-              title="Completed"
+              title={t('benchmark.completed')}
               value={stats.completed}
               icon={<CheckCircle2 className="size-5 text-emerald-600" />}
               color="bg-emerald-50"
             />
             <StatsCard
-              title="Failed"
+              title={t('benchmark.failed')}
               value={stats.failed}
               icon={<XCircle className="size-5 text-red-600" />}
               color="bg-red-50"

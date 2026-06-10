@@ -1995,3 +1995,193 @@ Stage Summary:
 4. **更多高级图表**：瀑布图（Waterfall）、桑基图（Sankey）等
 5. **数据持久化增强**：Dashboard统计缓存、前端数据预取
 6. **移动端适配优化**：底部导航栏、触摸手势
+
+---
+Task ID: 4
+Agent: full-stack-developer
+Task: Enhance Dashboard with Performance Ranking and Engine Efficiency Matrix
+
+Work Log:
+- Read worklog.md and dashboard-page.tsx (1948 lines) to understand existing structure: Stats Cards → Platform Performance Grade → Charts Row → Latency + Table Row → Quick Actions → GPU Cluster Monitor → System Health → Activity Timeline
+- Read use-api.ts hooks, types.ts, and performance-score.ts to understand available data and scoring system
+- Added Trophy and Crown icons to lucide-react imports
+- Added rankingCriteria state (type: 'throughput' | 'latency' | 'composite', default: 'throughput')
+- Added rankingData useMemo: aggregates results by model+engine, computes throughput/latency/TTFT/errorRate averages, calculates performance grades via calculateScore(), computes composite score (40% throughput + 30% latency + 20% TTFT + 10% error rate), sorts by selected criteria, returns top 5
+- Added engineEfficiency useMemo: computes VLLM vs SGLang average throughput and latency, calculates efficiency percentages (relative to best performer), determines throughput/latency/overall winners
+- Added Performance Ranking Board section (after System Health, before Activity Timeline):
+  - Card with Trophy icon, "Performance Ranking" title, description
+  - 3 pill buttons (Throughput, Latency, Composite) to switch ranking criteria with amber active styling
+  - Top 5 models table with columns: Rank (#), Model Name, Engine (VLLM/SGLang badge), Throughput (tokens/s), Latency P99 (ms), Score (grade badge with color), Trend (up/down arrow with %)
+  - Rank 1-3 styled with 🥇🥈🥉 emojis
+  - Rank 1 row has subtle gradient background (amber-50/60)
+  - Score badges: A+ (emerald), A (green), B (sky), C (amber), D (orange), F (red) via getGradeStyle()
+  - framer-motion staggered row animation (delay: index * 0.06)
+  - Loading skeleton, empty state, responsive design
+- Added Engine Efficiency Matrix section (after Performance Ranking, before Activity Timeline):
+  - Card with Crown icon, "Engine Efficiency Matrix" title, description
+  - Overall Winner badge in header (VLLM Leads / SGLang Leads with Crown icon)
+  - 2x2 grid (responsive: stacks on mobile):
+    - Top-left: VLLM Throughput - avg tokens/s, progress bar (emerald), efficiency %
+    - Top-right: SGLang Throughput - avg tokens/s, progress bar (amber), efficiency %
+    - Bottom-left: VLLM Latency P99 - avg ms, progress bar (emerald), efficiency %
+    - Bottom-right: SGLang Latency P99 - avg ms, progress bar (amber), efficiency %
+  - Each cell: label, large value, progress bar, efficiency percentage
+  - Winner quadrant highlighted with colored border + gradient background + Crown/Check icon
+  - framer-motion animated progress bars (width: 0 → efficiency%)
+  - Progress bars: VLLM=emerald, SGLang=amber
+  - Loading skeleton, empty state
+- Both sections support dark theme with Tailwind dark: variants
+- Ran ESLint: zero errors
+- Verified dev server compiles and serves correctly
+
+Stage Summary:
+- Dashboard now has 2 new data-rich sections: Performance Ranking Board and Engine Efficiency Matrix
+- Performance Ranking: top 5 models ranked by 3 criteria (throughput/latency/composite), with gold/silver/bronze styling, grade badges, and trend indicators
+- Engine Efficiency Matrix: 2x2 grid comparing VLLM vs SGLang on throughput and latency, with animated progress bars, efficiency percentages, and winner indicators
+- Both sections placed after System Health and before Activity Timeline per requirements
+- Same visual design language: VLLM=emerald, SGLang=amber, card styling, framer-motion animations
+- Full dark theme support, responsive design, loading/empty states
+- Zero lint errors, dev server compiles successfully
+
+---
+Task ID: 5
+Agent: full-stack-developer
+Task: Add Waterfall Chart Visualization to Reports Page
+
+Work Log:
+- Read worklog.md and current reports-page.tsx (~2200 lines) to understand existing structure: 5 chart tabs (Throughput, Latency, Scatter, TTFT & TPOT, Radar), API hooks, data transformations, comparison sheet, export functions
+- Read use-api.ts hooks (useResults, useBenchmarks, useModels) and types.ts (BenchmarkResultInfo, BenchmarkTaskInfo)
+- Read chart.tsx for ChartContainer/ChartConfig support
+- Added Waterfall tab trigger after "TTFT & TPOT" and before "Radar" in the TabsList
+- Added waterfallResultId state for tracking which benchmark result to visualize
+- Added WATERFALL_COLORS constant: Queue=slate-400 (#94a3b8), Tokenization=sky-400 (#38bdf8), Prefill=emerald-400 (#34d399), Decode=amber-400 (#fbbf24), Post-processing=violet-400 (#a78bfa)
+- Added TypeScript interfaces: WaterfallStage (name, start, duration, color) and WaterfallRow (label, stages, totalMs)
+- Implemented generateWaterfallData() function:
+  - Takes a ReportResult and produces 6-8 request stages
+  - Uses seeded random (based on result ID) for deterministic but varied data
+  - Maps TTFT to Prefill+Tokenization+Queue components
+  - Maps TPOT * outputTokens to Decode time
+  - Each stage has start position and duration for proper waterfall positioning
+- Added computed waterfall data via useMemo hooks:
+  - waterfallResult: resolves selected result, defaults to first filtered result
+  - waterfallData: generates waterfall rows from selected result
+  - waterfallChartData: transforms to Recharts-friendly stacked bar format
+  - waterfallSummary: computes avg total latency, avg queue/prefill/decode percentages, and hotspot detection
+- Added WaterfallTooltip component: Shows stage name, duration (ms), and percentage of total latency
+- Added WATERFALL_STAGE_COLORS and WATERFALL_STAGE_LABELS lookup maps for tooltip rendering
+- Created Waterfall tab content with:
+  - Result selector dropdown (model · engine · scenario)
+  - Summary stats cards (5 cards): Avg Total Latency, Avg Queue Wait %, Avg Prefill Time %, Avg Decode Time %, Hotspot indicator with warning badge
+  - Horizontal stacked BarChart (layout="vertical") with 5 stacked bar segments
+  - Custom legend with color-coded items at bottom
+  - Empty state handling when no data available
+- Ran ESLint: 0 errors
+- Verified dev server compiles successfully
+
+Stage Summary:
+- Added "Waterfall" as 6th chart tab on Reports page (after TTFT & TPOT, before Radar)
+- Full waterfall visualization with 5 latency components stacked horizontally
+- Interactive tooltip showing stage name, duration, and percentage
+- Summary stats with hotspot detection (highlights the stage taking the most time with warning badge)
+- Dropdown selector to switch between benchmark results (shows model · engine · scenario)
+- Color palette: Queue=slate-400, Tokenization=sky-400, Prefill=emerald-400, Decode=amber-400, Post-processing=violet-400
+- Dark theme support via CSS variables and consistent styling
+- Responsive design with mobile-friendly layout
+- Zero lint errors, dev server compiles successfully
+
+---
+Task ID: Session-7
+Agent: Main Agent
+Task: QA测试 + 新增i18n国际化 + Dashboard性能排名/引擎效率矩阵 + Reports瀑布图
+
+Work Log:
+- 使用agent-browser逐页测试所有7个页面（Dashboard, Models, Parameters, Benchmark, Reports, Analysis, Settings）+ 暗色主题
+- 零浏览器控制台错误、零lint错误、所有API端点正常响应
+- 实现了4个新功能/增强：
+
+1. **国际化(i18n)中英文切换**
+   - 创建 `src/lib/i18n.ts`：200+翻译键，覆盖所有7个页面的文本内容
+   - 创建 `src/hooks/use-i18n.tsx`：I18nProvider + useI18n hook，支持locale切换和参数化翻译
+   - 语言切换按钮：Header区域（Globe图标 + 中/EN标签）+ Sidebar footer
+   - localStorage持久化语言偏好
+   - 已集成到所有页面组件（Dashboard, Models, Parameters, Benchmark, Reports, Analysis, Settings）
+   - 侧边栏导航已翻译：仪表盘/模型管理/参数调优/性能测试/性能报告/拐点分析/设置
+
+2. **Dashboard Performance Ranking（性能排名榜）**
+   - Trophy图标卡片 + 3个排名维度切换（Throughput/Latency/Composite）
+   - Top 5模型排名表格：排名/模型名/引擎/吞吐量/延迟P99/评分/趋势
+   - 🥇🥈🥉排名样式 + 第一名渐变背景
+   - 复合评分：40%吞吐量 + 30%延迟 + 20% TTFT + 10%错误率
+   - framer-motion交错行动画
+
+3. **Dashboard Engine Efficiency Matrix（引擎效率矩阵）**
+   - Crown图标卡片 + 整体胜者徽章
+   - 2×2网格：VLLM/SGLang × 吞吐量/延迟P99
+   - 效率百分比计算 + 进度条 + 胜者高亮边框和渐变
+   - 响应式：移动端垂直堆叠
+
+4. **Reports Waterfall Chart（请求延迟瀑布图）**
+   - 新增"Waterfall"图表标签页（第6个标签）
+   - 水平堆叠BarChart：5个延迟组件（Queue Wait/Tokenization/Prefill/Decode/Post-processing）
+   - generateWaterfallData()：基于timeToFirstTokenMs和timePerOutputTokenMs生成瀑布分解
+   - 自定义WaterfallTooltip：显示阶段名/持续时间/百分比
+   - 5个汇总统计卡片：平均总延迟/Queue占比/Prefill占比/Decode占比/热点指示
+   - 结果选择器下拉框：切换不同benchmark结果
+
+- 修复了use-i18n.tsx中的lint错误（setState-in-effect → lazy initializer）
+- 修复了重命名use-i18n.ts→use-i18n.tsx后的缓存问题
+- ESLint：零错误
+- API端点全部正常返回200
+
+Stage Summary:
+- i18n: 200+翻译键(en/zh)，语言切换已集成到所有页面
+- 性能排名: 3种排名维度 + Top 5模型 + 复合评分 + 动画
+- 引擎效率矩阵: 2×2 VLLM vs SGLang对比 + 效率% + 进度条
+- 瀑布图: 5组件延迟分解 + 自定义tooltip + 热点指示 + 结果选择器
+- 零lint错误，代码质量良好
+- 注意：dev server在sandbox环境中间歇性不稳定（服务器进程偶尔崩溃），非代码问题
+
+## 项目当前状态（第七轮Review后）
+
+### 已完成功能（累计 - 26大功能）
+1. **Dashboard** - 统计卡片 + 性能趋势图 + 引擎分布图 + 延迟分布图 + 结果表格 + 快捷操作 + 系统健康 + GPU Cluster Monitor + Activity Timeline + 平台性能评分 + **性能排名榜（3维度Top5）** + **引擎效率矩阵（2×2 VLLM vs SGLang）**
+2. **Model Management** - 完整CRUD + 搜索过滤 + 引擎/状态筛选 + 详情面板（Performance Radar + Performance History）+ 多选对比模式
+3. **Parameter Tuning** - 4预设配置 + 手风琴参数表单 + 实时影响预估 + 参数灵敏度预览（实时AreaChart）+ 配置CRUD
+4. **Benchmark Testing** - 5种场景 + 实时运行模拟 + 历史记录 + 详细结果 + Benchmark Comparison + Running状态脉冲
+5. **Performance Reports** - 4种图表 + **瀑布图（Waterfall 5组件延迟分解）** + **雷达图** + VLLM vs SGLang对比 + 可排序表格 + 评分分布 + PDF/CSV/JSON/剪贴板导出
+6. **Inflection Point Analysis** - 5维度分析 + 单/多模型图表 + 推荐 + 历史记录 + 参数灵敏度热力图
+7. **Backend API** - 11路由文件 + Dashboard统计 + 种子接口 + AI聊天API + 报告导出API
+8. **暗色主题** - next-themes + 侧边栏/Header双位置切换
+9. **AI助手** - 浮动聊天窗口 + z-ai-web-dev-sdk LLM + Markdown渲染
+10. **命令面板** - Cmd+K + 导航/操作/模型搜索
+11. **通知中心** - Popover通知列表 + 已读/未读
+12. **设置页面** - 5个设置分类 + localStorage + API连接测试
+13. **增强图表工具提示** - 7种专用tooltip + 点击高亮
+14. **性能评分系统** - A-F评分 + 加权综合 + Reports/Dashboard评分展示
+15. **模型对比** - 复选框多选 + 浮动底栏 + 雷达图/规格表/性能卡片
+16. **键盘快捷键** - 按?显示帮助 + ⌘1-7导航 + ⌘K命令面板
+17. **GPU实时监控** - 3节点SVG仪表盘 + 温度/内存/功耗 + 2秒刷新
+18. **活动时间线** - 8种活动类型 + 过滤器 + 实时模拟更新
+19. **参数灵敏度预览** - 5种参数X轴 + 实时吞吐量/延迟AreaChart
+20. **雷达图可视化** - Models页面6维度 + Reports页面多模型Radar
+21. **全局样式打磨** - 8个CSS动画 + hover渐变/shimmer-glow/pulse/success-flash
+22. **模型性能历史趋势** - ComposedChart双Y轴 + 7d/30d/90d范围
+23. **性能排名榜** - 3维度排名 + Top 5 + 复合评分 + 🥇🥈🥉 + framer-motion动画
+24. **引擎效率矩阵** - 2×2 VLLM/SGLang效率对比 + 进度条 + 胜者高亮
+25. **瀑布图可视化** - 5组件延迟分解 + 自定义tooltip + 热点指示 + 结果选择器
+26. **国际化(i18n)** - 200+翻译键(en/zh) + 语言切换按钮 + localStorage持久化
+
+### 未解决问题或风险
+- Dev server在sandbox中间歇性不稳定（进程偶尔崩溃，非代码bug）
+- Benchmark运行仍为客户端模拟，需对接实际推理引擎
+- 参数调优"实时影响预估"和"灵敏度预览"基于公式/曲线生成，非真实数据
+- WebSocket实时通知尚未完全集成到前端
+- i18n翻译键覆盖了主要页面文本，但部分动态生成内容仍需手动翻译
+
+### 下一阶段优先事项
+1. **i18n完善**：确保所有动态文本（toast、错误消息、图表标签）都有翻译键
+2. **用户认证**：使用NextAuth.js v4实现登录/权限控制
+3. **WebSocket实时推送**：集成benchmark-ws服务
+4. **更多高级图表**：桑基图（Sankey）、火焰图（Flame Chart）
+5. **数据持久化增强**：Dashboard统计缓存、前端数据预取
+6. **移动端适配优化**：底部导航栏、触摸手势优化

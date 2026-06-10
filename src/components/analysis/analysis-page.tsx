@@ -29,6 +29,7 @@ import {
 import { motion } from 'framer-motion'
 import { toast } from 'sonner'
 import { useAnalyses, useModels, useBenchmarks, useResults } from '@/hooks/use-api'
+import { useI18n } from '@/hooks/use-i18n'
 import type { EngineType, ModelInfo } from '@/lib/types'
 import { EnhancedAnalysisTooltip, useChartHighlight, HighlightCard } from '@/components/ui/enhanced-chart-tooltip'
 
@@ -731,6 +732,7 @@ export default function AnalysisPage() {
   const [selectedEngine, setSelectedEngine] = useState<EngineType | 'both'>('both')
   const [creating, setCreating] = useState(false)
   const [activeMainTab, setActiveMainTab] = useState('inflection')
+  const { t } = useI18n()
 
   // Click-to-highlight state for charts
   const singleModelHighlight = useChartHighlight()
@@ -1010,9 +1012,9 @@ export default function AnalysisPage() {
       {/* ─── Header ──────────────────────────────────────────── */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Inflection Point Analysis</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t('analysis.title')}</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Identify optimal parameter configurations for inference engines
+            {t('analysis.subtitle')}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
