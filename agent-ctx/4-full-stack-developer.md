@@ -1,21 +1,31 @@
-# Task 4: Update Parameters page to use real API data
+# Task 4: Integrate Model Comparison Feature into Models Page
 
-## Agent: full-stack-developer
+## Summary
+Successfully integrated model comparison feature into the Models page with floating bottom bar, emerald selection highlights, and model name badges.
 
-## Work Summary
-Updated the Parameters page (`src/components/parameters/parameters-page.tsx`) to use real API data instead of mock data from Zustand store.
+## Changes Made
 
-## Key Changes
-1. **Removed mock data**: Deleted `MOCK_MODELS` (4 hardcoded models) and `INITIAL_SAVED_PROFILES` (3 hardcoded profiles)
-2. **Replaced Zustand store with API hooks**: `useProfiles()` and `useModels()` from `@/hooks/use-api`
-3. **All CRUD operations now async with API calls**: save, edit, duplicate, delete all use try/catch with toast.error
-4. **Added loading states**: Skeleton loaders for model selector and profiles table during fetch
-5. **Added error state banner**: AlertCircle with error messages when API fails
-6. **Added saving/deleting spinners**: Loader2 in dialog buttons during async operations
-7. **Preserved**: PRESET_PROFILES (local), computeImpact, all visual design, accordion sections, sliders, switches, impact preview
+### Modified File: `src/components/models/models-page.tsx`
 
-## Lint Result
-0 errors (1 pre-existing warning in use-api.ts, not in parameters code)
+1. **Emerald border highlight for selected cards**
+   - Changed from `border-primary shadow-md ring-1 ring-primary/30` to `border-emerald-400 shadow-md ring-2 ring-emerald-400/40 dark:border-emerald-500 dark:ring-emerald-500/40`
 
-## Dev Server
-Compiles successfully, API endpoints responding correctly (profiles, models returning 200)
+2. **Header comparison UI changes**
+   - Replaced Cancel/Compare buttons with subtle "Select models to compare" Badge
+   - Changed "Exit Comparison" button text to "Back to Models"
+   - Kept "Compare" and "Add Model" buttons when not in comparison mode
+
+3. **Floating comparison bottom bar (new)**
+   - Fixed position at bottom center with spring slide-up animation
+   - Glassmorphism design with backdrop blur and emerald border
+   - Shows "X models selected" counter with emerald icon
+   - Displays selected model names as engine-colored badges (emerald/amber)
+   - Each badge has X dismiss button to remove model
+   - "Cancel" ghost button and "Compare Now" emerald button
+   - Compare Now disabled when < 2 models selected
+   - Responsive layout with max-width 2xl
+
+## Test Results
+- ESLint: 0 errors
+- Dev server: compiles successfully
+- All existing functionality preserved

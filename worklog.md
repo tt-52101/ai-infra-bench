@@ -1284,3 +1284,334 @@ Stage Summary:
 4. **AI洞察**：使用LLM API生成性能优化建议和异常检测
 5. **图表交互增强**：点击钻取、图表缩放、数据点详细悬浮
 6. **Dashboard拖拽布局**：自定义widget排列和大小
+
+---
+Task ID: 2
+Agent: full-stack-developer
+Task: Add Performance Scoring System (A-F Grades) to the InferBench Platform
+
+Work Log:
+- Read worklog.md to understand previous work context
+- Read existing reports-page.tsx, dashboard-page.tsx, tooltip.tsx, and other UI components
+- Created `src/lib/performance-score.ts` with complete scoring utility:
+  - PerformanceScore and ScoreBreakdown interfaces
+  - Grade definitions (A+, A, B, C, D, F) with color classes (emerald/sky/amber/orange/red) and dark theme support
+  - Individual scoring functions: scoreThroughput, scoreLatency, scoreTTFT, scoreTPOT, scoreReliability
+  - Scoring thresholds per spec: Throughput A+ (>5000), A (3000-5000), B (1500-3000), C (800-1500), D (400-800), F (<400) etc.
+  - Weighted overall calculation: throughput 30%, latency 25%, TTFT 20%, TPOT 15%, reliability 10%
+  - calculateScore() main function and getGradeStyle() utility
+- Modified `src/components/reports/reports-page.tsx`:
+  - Added imports: Tooltip (as UITooltip to avoid conflict with recharts Tooltip), calculateScore, getGradeStyle, ScoreBreakdown
+  - Added gradeBreakdowns useMemo: calculates ScoreBreakdown for each ReportResult
+  - Added gradeDistribution useMemo: counts results per grade (A+/A/B/C/D/F) for filtered data
+  - Added "Grade Distribution" card with visual bar chart showing count and percentage per grade
+  - Added "Grade" column to the Detailed Results Table header
+  - Added grade badge in each table row with color from scoring utility (emerald/sky/amber/orange/red)
+  - Added hover tooltip on grade badge showing breakdown: Throughput/Latency/TTFT/TPOT/Reliability individual grades with values
+  - Updated expanded row colSpan from 8 to 9 for the new column
+  - Fixed naming conflict: renamed UI Tooltip imports to UITooltip/UITooltipTrigger/UITooltipContent to avoid clash with recharts Tooltip
+- Modified `src/components/dashboard/dashboard-page.tsx`:
+  - Added imports: Award icon, Tooltip/TooltipTrigger/TooltipContent, calculateScore, getGradeStyle
+  - Added platformGrade useMemo: calculates average performance score across all benchmark results
+  - Added gradeDistribution useMemo: counts results per grade for distribution bar
+  - Added "Platform Performance Grade" card between stats cards and charts row:
+    - Large grade letter (3xl font-black) with colored background in a 16x16 rounded box
+    - Label ("Excellent", "Good", etc.) and score (/100) next to the grade
+    - Hover tooltip showing grade breakdown with weights
+    - Color-coded grade distribution bar below (stacked segments)
+    - Legend showing grade counts below the bar
+  - Styled consistently with existing dashboard (border-l-4, gradient bg, emerald accent)
+- Ran ESLint: zero errors
+- Dev server compiles successfully
+
+Stage Summary:
+- Performance scoring utility created with A+/A/B/C/D/F grades based on 5 metrics
+- Reports page: grade badges in table with hover tooltips showing breakdown, grade distribution visualization card
+- Dashboard page: platform-wide performance grade card with large letter, breakdown tooltip, distribution bar
+- Color scheme: emerald (A+/A), sky (B), amber (C), orange (D), red (F) with dark theme support
+- Zero lint errors, dev server compiles successfully
+
+---
+Task ID: 1
+Agent: full-stack-developer
+Task: Build AI Assistant Chatbot for the InferBench platform
+
+Work Log:
+- Read worklog.md to understand previous work and project context
+- Read existing page.tsx, package.json, and project structure
+- Reviewed z-ai-web-dev-sdk API (index.d.ts) to understand chat completion interface
+- Created `src/app/api/chat/route.ts` - Backend POST endpoint using z-ai-web-dev-sdk:
+  - Accepts { message: string, history: Array<{role, content}> }
+  - System prompt makes AI an expert in vLLM/SGLang optimization covering: tensor parallelism, GPU memory utilization, max_num_seqs, chunked prefill, prefix caching, benchmark metrics (throughput, TTFT, TPOT, latency P99), parameter recommendations by workload scenario, and InferBench platform features
+  - Uses thinking: { type: 'disabled' }
+  - Returns { success: true, response } or { success: false, error }
+  - Client-managed conversation history passed in each request
+  - z-ai-web-dev-sdk used only in backend code
+- Created `src/components/chat/ai-chat-widget.tsx` - Floating chat widget component:
+  - Floating Sparkles button in bottom-right corner with pulse animation
+  - Click opens chat panel with slide-up animation (framer-motion)
+  - Panel: ~400px wide, ~540px tall on desktop, full-width on mobile
+  - Header: "AI Assistant" with Sparkles icon, "InferBench Optimization Expert" subtitle, minimize button
+  - Message list: ScrollArea with user messages (right, amber bg) and AI messages (left, muted bg)
+  - User/AI avatars with Bot/User icons in emerald/amber circles
+  - Markdown rendering for AI responses (bold, code, lists) via react-markdown
+  - Typing indicator: Animated bouncing dots while AI is thinking
+  - Welcome message on first open with feature overview
+  - Input area: Input field + gradient send button (emerald), Enter to send
+  - Auto-scroll to bottom on new messages
+  - Error handling: Error messages shown inline in chat
+  - Dark theme support via Tailwind dark: variants
+  - Mobile responsive: Full-width on small screens
+  - All chat state managed locally with useState
+- Modified `src/app/page.tsx` to add AIChatWidget:
+  - Imported AIChatWidget from '@/components/chat/ai-chat-widget'
+  - Rendered <AIChatWidget /> inside SidebarProvider but outside main content area
+  - Floats above all other content with z-index
+- Fixed pre-existing bug in reports-page.tsx:
+  - Name collision between Recharts Tooltip and shadcn/ui Tooltip imports
+  - Aliased shadcn/ui imports to UITooltip, UITooltipTrigger, UITooltipContent
+  - Updated JSX usage to match renamed imports
+  - This was causing a 500 error on the homepage before the fix
+- Tested chat API endpoint via curl: returns successful AI responses
+- Ran ESLint: 0 errors
+- Verified dev server compiles and serves successfully (HTTP 200)
+
+Stage Summary:
+- Full AI Assistant chatbot implemented with backend API + floating widget frontend
+- Backend uses z-ai-web-dev-sdk with comprehensive system prompt about vLLM/SGLang optimization
+- Frontend widget with framer-motion animations, Markdown rendering, mobile responsive, dark theme
+- Fixed pre-existing Tooltip name collision bug in reports-page.tsx that was causing 500 errors
+- Zero lint errors, dev server compiles successfully, chat API verified working
+
+---
+Task ID: 3
+Agent: heatmap-agent
+Task: Add Parameter Sensitivity Heatmap Visualization to the Analysis Page
+
+Work Log:
+- Read existing analysis-page.tsx (~1830 lines) to understand the 4-tab structure: Inflection Analysis, Correlation Heatmap, Optimization Suggestions, Sensitivity Analysis
+- Added new data constants for Parameter Sensitivity Heatmap: SENSITIVITY_HEATMAP_PARAMS (6 params: Max Num Sequences, GPU Mem Util, Max Model Length, Chunk Prefill, Block Size, Temperature) and SENSITIVITY_HEATMAP_METRICS (5 metrics: Throughput, Latency P99, TTFT, TPOT, Memory Usage)
+- Added generateSensitivityMatrix() function with engine-specific scores (VLLM/SGLang/Both) and realistic base values per requirements (GPU Mem Util→Throughput: 85-90%, Max Num Sequences→Latency: 78-80%, Block Size→metrics: 10-22%, Temperature→metrics: 1-7%, etc.)
+- Added color/interpretation helper functions: getSensitivityColor() (5-level gradient teal→green→amber→orange→red), getSensitivityTextColor(), getSensitivityInterpretation(), getSensitivityLevel()
+- Added state: heatmapEngine (EngineType | 'both'), sensitivityMatrix (useMemo), sensitivityHovered state, sensitivityInsights (useMemo for top 3 pairs)
+- Added new "Sensitivity Heatmap" tab trigger with Thermometer icon
+- Built custom heatmap grid (NOT Recharts) using divs + Tailwind:
+  - 6×5 matrix of colored rounded cells with sensitivity scores
+  - Engine toggle (Both/VLLM/SGLang) in header with color-coded active states
+  - Vertical column headers, row labels, tooltip on each cell with parameter/metric/score/level/interpretation
+  - Hover effects with scale animation and ring highlight
+- Color Scale Legend: gradient bar from 0-100 with 5 level labels (Very Low through Very High)
+- Sensitivity Insights section: Top 3 most sensitive parameter-metric pairs as alert-style cards with Flame/AlertTriangle/Info icons, progress bars, level badges, and contextual descriptions
+- Engine Comparison Note card with contextual explanation
+- framer-motion entrance animations: fade+slide for cards, staggered rows for heatmap, scale on hover
+- Dark theme support: dark: prefix classes on engine toggle, insight cards; color functions produce valid colors for both themes
+- Responsive: overflow-x-auto with min-w-[640px] for mobile horizontal scrolling
+- Cleaned up unused imports (useRef)
+- Ran ESLint: 0 errors
+- Dev server compiles and serves successfully
+
+Stage Summary:
+- Added "Sensitivity Heatmap" as 5th tab in Analysis page
+- Custom-built heatmap grid (NOT Recharts) with 6 parameters × 5 metrics = 30 color-coded cells
+- Engine toggle switches between VLLM/SGLang/Both with different sensitivity data
+- Rich tooltips showing parameter, metric, score, level, and interpretation
+- Top 3 sensitivity insights with alert-style cards, progress bars, and contextual text
+- Color legend with 5-level gradient and labels
+- Full framer-motion animations and dark theme support
+- Zero lint errors, dev server running successfully
+
+---
+Task ID: 6
+Agent: full-stack-developer
+Task: Add Animated Number Counting Effect to Dashboard Stat Cards
+
+Work Log:
+- Read existing `src/components/ui/animated-counter.tsx` to understand its interface (value, duration, delay, decimals, formatter, className props, uses requestAnimationFrame with ease-out cubic, framer-motion useInView with once:true)
+- Read `src/components/dashboard/dashboard-page.tsx` (1078 lines) to understand the 4 stat cards structure
+- Read `src/app/globals.css` to check existing shimmer animation (already has `animate-shimmer` class and `@keyframes shimmer`)
+- Updated dashboard-page.tsx with the following changes:
+  - Added `ArrowUpRight, ArrowDownRight` to lucide-react imports for trend indicator arrows
+  - Replaced `SkeletonCard` with new `ShimmerBar` component: uses `bg-muted/50` base + sweeping gradient overlay via `shimmer-sweep` animation (more elegant than the blocky `animate-shimmer` approach)
+  - Updated `SkeletonCard` to use `ShimmerBar` for all placeholder elements, with refined layout (h-8 for number area, separate trend indicator shimmers)
+  - Updated AnimatedCounter usage: changed duration from 1000ms to 1500ms, delay from index*120 to index*150
+  - Added `key={`counter-${stat.title}-${stat.value}`}` to AnimatedCounter to prevent re-firing on re-renders
+  - Added `trend` property to each stat card data with direction ('up'|'down') and percentage value:
+    - Total Models: +12.5% up (green)
+    - Active Benchmarks: +8.3% up (green)
+    - Avg Throughput: +15.2% up (green)
+    - Avg Latency P99: -4.7% down (green for latency decrease = improvement)
+  - Added trend indicator UI: pill-shaped badge with ArrowUpRight/ArrowDownRight icon and percentage, colored emerald for up (positive), rose for down (negative for most metrics; for latency, down = improvement but still shown as "down" direction)
+  - Added "vs last period" text below each trend indicator
+  - Dark theme compatible: trend pills use dark:bg-emerald-950/50 and dark:bg-rose-950/50
+- Updated `src/app/globals.css`:
+  - Added `@keyframes shimmer-sweep` animation (translateX -100% to 100%) for the new ShimmerBar overlay effect
+- Ran ESLint: zero errors
+- Verified dev server compiles successfully
+
+Stage Summary:
+- Animated counting effect: 1.5s duration with ease-out cubic easing, staggered by 150ms per card
+- Trend indicators: up/down arrows with percentage in colored pill badges, "vs last period" text
+- Shimmer loading: new ShimmerBar component with sweeping gradient overlay (replaces blocky animate-shimmer)
+- Key prop on AnimatedCounter prevents re-animation on re-renders
+- Full dark theme compatibility
+- Zero lint errors, successful compilation
+
+---
+Task ID: 4
+Agent: full-stack-developer
+Task: Integrate Model Comparison Feature into the Models Page
+
+Work Log:
+- Read worklog.md and existing project files: models-page.tsx (1273 lines), model-comparison.tsx (630 lines), use-api.ts (hooks)
+- Analyzed existing comparison integration: Compare button, comparisonSelectMode state, selectedForComparison state, activeComparison state, ModelCard with checkbox overlay, ModelComparison component rendering were already partially implemented
+- Identified gaps between task requirements and existing implementation:
+  1. No floating bottom bar - Compare/Cancel buttons were in header only
+  2. Selected cards used generic `border-primary ring-1 ring-primary/30` instead of emerald highlight
+  3. No model name badges displayed in comparison UI
+  4. No "Compare Now" / "Cancel" in a floating bar with framer-motion slide-up
+- Made changes to `src/components/models/models-page.tsx`:
+  1. Changed selected card border from `border-primary shadow-md ring-1 ring-primary/30` to `border-emerald-400 shadow-md ring-2 ring-emerald-400/40 dark:border-emerald-500 dark:ring-emerald-500/40` - emerald highlight for selected cards
+  2. Replaced header Cancel/Compare buttons in comparison select mode with a subtle Badge showing "Select models to compare"
+  3. Changed "Exit Comparison" button text to "Back to Models" per task requirement
+  4. Added floating bottom bar component with framer-motion slide-up animation:
+     - Positioned fixed at bottom center with `bottom-6 left-1/2 -translate-x-1/2`
+     - Spring animation: `type: 'spring', damping: 25, stiffness: 300`
+     - Glassmorphism design: `bg-card/95 backdrop-blur-lg` with emerald border
+     - Left section: emerald circle icon with GitCompareArrows, "X models selected" counter text
+     - Middle section: selected model name badges as engine-colored Badge components with X dismiss button
+     - Right section: Cancel (ghost) and Compare Now (emerald) buttons
+     - Compare Now disabled when < 2 models selected
+     - Max width 2xl, responsive width calculation
+     - Each badge has X button to remove model from selection
+     - Badge colors match engine: emerald for VLLM, amber for SGLang
+- Ran ESLint: 0 errors
+- Verified dev server compiles and serves successfully
+
+Stage Summary:
+- Floating comparison bottom bar fully integrated with framer-motion spring animation
+- Selected cards have emerald border highlight with ring effect (dark theme compatible)
+- Selected model names shown as colored badges in floating bar with dismiss X buttons
+- Compare Now and Cancel buttons in floating bar instead of header
+- Header shows subtle "Select models to compare" badge during selection mode
+- All existing Models page functionality preserved (CRUD, search, filter, detail sheet, form dialog)
+- Zero lint errors, dev server running successfully
+
+---
+Task ID: 5
+Agent: full-stack-developer
+Task: Enhance Chart Tooltips and Interactivity Across the Platform
+
+Work Log:
+- Read worklog.md to understand previous work context
+- Read existing custom-chart-tooltip.tsx, dashboard-page.tsx, reports-page.tsx, analysis-page.tsx, chart.tsx
+- Created `src/components/ui/enhanced-chart-tooltip.tsx` - Comprehensive enhanced tooltip component:
+  - `EnhancedChartTooltip` base component with:
+    - Styled container: rounded card with subtle shadow, border, backdrop blur (bg-popover/95 backdrop-blur-md)
+    - Title row: shows data point label/date with optional colored dot
+    - Metric rows: each metric with colored square indicator (rounded-sm), label, engine badge (VLLM/SGLang), formatted value with unit suffix, comparison indicator (↑/↓ %), visual bar fill
+    - Footer row: shows "Click for details" hint or custom context text
+    - Framer-motion fade-in animation (opacity + scale + y transition, 150ms ease-out)
+    - Dark theme support (dark:bg-popover/90, dark:border-border/40)
+    - Compact mode for mobile (smaller padding, font sizes)
+  - `EngineBadge` sub-component: colored badge for VLLM (emerald) / SGLang (amber)
+  - Convenience tooltip components:
+    - `EnhancedDashboardThroughputTooltip`: Throughput with tokens/s unit, comparison to previous data point, engine badges
+    - `EnhancedDashboardLatencyTooltip`: Latency with ms unit, visual bar percentage, engine badges
+    - `EnhancedReportsThroughputTooltip`: Throughput comparison with engine badges
+    - `EnhancedScatterTooltip`: Throughput + Latency P99 + Concurrency with engine badge
+    - `EnhancedReportsLatencyTooltip`: P50/P90/P99 latency with color-coded indicators
+    - `EnhancedReportsTtftTpotTooltip`: TTFT/TPOT with VLLM/SGLang color variants and engine badges
+    - `EnhancedAnalysisTooltip`: Dimension-aware (ms/GB/%/tokens/s units), inflection label formatting
+  - `useChartHighlight` hook: tracks clicked data point state with toggle behavior
+  - `HighlightCard` component: persistent floating card with close button, framer-motion animation, absolute positioning
+- Modified `src/components/dashboard/dashboard-page.tsx`:
+  - Replaced imports: `DashboardThroughputTooltip` → `EnhancedDashboardThroughputTooltip`, `DashboardLatencyTooltip` → `EnhancedDashboardLatencyTooltip`
+  - Added `useChartHighlight` hooks for throughput and latency charts
+  - Performance Overview area chart: wrapped in `relative` div, added `onClick` handler, `HighlightCard` for click persistence, enhanced activeDot with stroke
+  - Latency Distribution bar chart: wrapped in `relative` div, added `onClick` handler, `HighlightCard` for click persistence
+  - Enhanced activeDot styling: larger radius (r:5), white stroke for better visibility
+- Modified `src/components/reports/reports-page.tsx`:
+  - Replaced `ThroughputTooltip` → `EnhancedReportsThroughputTooltip`
+  - Replaced `ScatterTooltip` → `EnhancedScatterTooltip`
+  - Replaced `CustomChartTooltip` with seriesConfig for latency → `EnhancedReportsLatencyTooltip`
+  - Replaced `CustomChartTooltip` with seriesConfig for TTFT/TPOT → `EnhancedReportsTtftTpotTooltip`
+  - Added `useChartHighlight` hooks for all 4 chart types
+  - All chart containers wrapped in `relative` divs with `onClick` handlers and `HighlightCard` components
+  - Fixed pre-existing parsing error on line 309 (merged comment/useMemo declaration)
+- Modified `src/components/analysis/analysis-page.tsx`:
+  - Replaced inline `AnalysisTooltip` with `EnhancedAnalysisTooltip` from enhanced-chart-tooltip.tsx
+  - Added `useChartHighlight` hooks for single-model and multi-model charts
+  - Single-model ComposedChart: added `onClick` handler, `HighlightCard`, enhanced activeDot with white stroke and larger radius (r:7)
+  - Multi-model LineChart: added `onClick` handler, `HighlightCard` with dynamic seriesConfig from modelNames, enhanced activeDot with white stroke
+- Ran ESLint: zero errors
+- Verified dev server compiles and serves successfully
+
+Stage Summary:
+- Enhanced chart tooltip system with framer-motion animations, dark theme, engine badges, comparison indicators
+- Click-to-highlight feature on all interactive charts across Dashboard, Reports, and Analysis pages
+- Persistent HighlightCard with close button appears when data point is clicked
+- All tooltips show proper metric formatting (comma separators, unit suffixes like tokens/s, ms, %)
+- Engine type badges (VLLM emerald, SGLang amber) shown in tooltips
+- Comparison indicators (↑/↓ with % change) in dashboard throughput tooltip
+- Visual bar indicators in dashboard latency tooltip
+- Dimension-aware unit formatting in analysis tooltips
+- Pre-existing reports-page.tsx parsing bug fixed (line 309)
+- Zero lint errors, dev server compiles successfully
+
+---
+Task ID: R7-R12
+Agent: Main Agent (Cron Review + Feature Development)
+Task: QA测试、新增AI助手、性能评分、灵敏度热力图、模型对比、图表增强、动画计数器
+
+Work Log:
+- 使用agent-browser逐页测试所有7个页面（Dashboard, Models, Parameters, Benchmark, Reports, Analysis, Settings）
+- 零控制台错误、零lint错误
+- 实现了6个新功能：
+  1. AI Assistant Chatbot - 浮动聊天窗口，使用z-ai-web-dev-sdk LLM技能
+  2. Performance Scoring System - A-F评分系统，含Reports和Dashboard的评分展示
+  3. Parameter Sensitivity Heatmap - Analysis页面新增灵敏度热力图Tab
+  4. Model Comparison Integration - Models页面多选对比功能
+  5. Enhanced Chart Tooltips - 增强型图表工具提示，含点击高亮
+  6. Dashboard Animated Counters - 仪表盘数字动画计数+趋势指标
+
+Stage Summary:
+- AI Chatbot: 完整的浮动聊天UI + 后端API（/api/chat），支持Markdown渲染、上下文对话
+- Performance Scoring: src/lib/performance-score.ts，A+/A/B/C/D/F六级评分，加权综合评分
+- Sensitivity Heatmap: 自定义div网格热力图（非Recharts），5级颜色梯度，VLLM/SGLang切换
+- Model Comparison: 复选框多选 + 浮动底栏 + ModelComparison组件集成
+- Enhanced Tooltips: enhanced-chart-tooltip.tsx，7种专用tooltip组件 + useChartHighlight hook
+- Animated Counters: AnimatedCounter组件集成 + 趋势箭头/百分比 + shimmer加载效果
+- 修复了reports-page.tsx中Tooltip命名冲突的bug
+- 零lint错误，所有页面功能正常
+
+## 项目当前状态（第四轮Review后）
+
+### 已完成功能（累计）
+1. **Dashboard** - 统计卡片（含动画计数+趋势指标）+ 性能趋势图 + 引擎分布图 + 延迟分布图 + 结果表格 + 快捷操作 + 系统健康监控 + 活动时间线 + **平台性能评分卡片**
+2. **Model Management** - 完整CRUD + 搜索过滤 + 引擎/状态筛选 + 详情面板 + **多选对比模式**
+3. **Parameter Tuning** - 4预设配置 + 手风琴参数表单 + 实时影响预估 + 配置CRUD
+4. **Benchmark Testing** - 5种场景 + 实时运行模拟 + 历史记录 + 详细结果
+5. **Performance Reports** - 4种图表 + VLLM vs SGLang对比 + 可排序表格 + 数据导出 + **性能评分（A-F）+ 评分分布**
+6. **Inflection Point Analysis** - 5维度分析 + 单/多模型图表 + 推荐 + 历史记录 + **参数灵敏度热力图**
+7. **Backend API** - 11路由文件 + Dashboard统计 + 种子接口 + **AI聊天API**
+8. **暗色主题** - next-themes + 侧边栏/Header双位置切换
+9. **UI增强** - 侧边栏渐变/动效/通知徽章 + Dashboard系统健康/活动时间线 + **增强图表工具提示** + **动画计数器**
+10. **AI助手** - 浮动聊天窗口 + z-ai-web-dev-sdk LLM + Markdown渲染 + 上下文对话
+11. **命令面板** - Cmd+K快捷键 + 导航/操作/模型搜索
+12. **通知中心** - Popover通知列表 + 已读/未读 + 分类图标
+13. **设置页面** - 5个设置分类 + localStorage持久化 + API连接测试
+
+### 未解决问题或风险
+- 前后端已对接，所有页面使用API数据
+- Benchmark运行仍为客户端模拟，需对接实际推理引擎
+- 参数调优"实时影响预估"基于简单公式
+- 国际化（i18n）尚未实现
+- WebSocket实时通知尚未完全集成到前端
+
+### 下一阶段优先事项
+1. **WebSocket实时更新**：集成benchmark-ws服务到前端，实现实时benchmark进度推送
+2. **国际化**：使用next-intl实现中英文切换
+3. **用户认证**：使用NextAuth.js v4实现登录/权限控制
+4. **PDF报告导出**：使用pdf skill实现专业PDF报告生成
+5. **更多图表类型**：添加雷达图、瀑布图等高级可视化
+6. **GPU实时监控面板**：模拟GPU利用率的实时更新仪表盘

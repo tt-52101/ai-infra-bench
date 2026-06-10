@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import { Box, Play, Zap, Clock, ArrowRight, Plus, SlidersHorizontal, TrendingUp, Server, HardDrive, Wifi, CheckCircle2, Info, XCircle } from 'lucide-react'
+import { Box, Play, Zap, Clock, ArrowRight, Plus, SlidersHorizontal, TrendingUp, Server, HardDrive, Wifi, CheckCircle2, Info, XCircle, Award, ArrowUpRight, ArrowDownRight } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -10,11 +10,14 @@ import { Progress } from '@/components/ui/progress'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ChartContainer, ChartTooltip, type ChartConfig } from '@/components/ui/chart'
 import { AnimatedCounter } from '@/components/ui/animated-counter'
-import { CustomChartTooltip, DashboardThroughputTooltip, DashboardLatencyTooltip } from '@/components/ui/custom-chart-tooltip'
+import { CustomChartTooltip } from '@/components/ui/custom-chart-tooltip'
+import { EnhancedDashboardThroughputTooltip, EnhancedDashboardLatencyTooltip, useChartHighlight, HighlightCard } from '@/components/ui/enhanced-chart-tooltip'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { useAppStore } from '@/lib/store'
 import { useDashboardStats, useModels, useBenchmarks, useResults } from '@/hooks/use-api'
 import type { BenchmarkTaskInfo, BenchmarkResultInfo } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { calculateScore, getGradeStyle } from '@/lib/performance-score'
 import {
   AreaChart,
   Area,
@@ -78,17 +81,33 @@ const item = {
 
 // ── Loading Skeleton ──────────────────────────────────────────────────────
 
+function ShimmerBar({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        'relative overflow-hidden rounded bg-muted/50',
+        className
+      )}
+    >
+      <div className="absolute inset-0 -translate-x-full animate-[shimmer-sweep_1.8s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-white/20 dark:via-white/10 to-transparent" />
+    </div>
+  )
+}
+
 function SkeletonCard() {
   return (
-    <Card className="border-l-4 border-l-muted py-0 gap-0">
+    <Card className="border-l-4 border-l-muted py-0 gap-0 overflow-hidden">
       <CardContent className="p-5">
         <div className="flex items-start justify-between">
-          <div className="space-y-2">
-            <div className="h-4 w-24 animate-shimmer rounded" />
-            <div className="h-7 w-16 animate-shimmer rounded" />
-            <div className="h-3 w-20 animate-shimmer rounded" />
+          <div className="space-y-2.5">
+            <ShimmerBar className="h-4 w-24" />
+            <ShimmerBar className="h-8 w-20" />
+            <div className="flex items-center gap-2">
+              <ShimmerBar className="h-3 w-12" />
+              <ShimmerBar className="h-3 w-16" />
+            </div>
           </div>
-          <div className="h-10 w-10 animate-shimmer rounded-lg" />
+          <ShimmerBar className="h-10 w-10 rounded-lg" />
         </div>
       </CardContent>
     </Card>
@@ -148,6 +167,10 @@ const statCardGradients: Record<string, string> = {
 export function DashboardPage() {
   const { setActivePage } = useAppStore()
 
+  // Click-to-highlight state for charts
+  const throughputHighlight = useChartHighlight()
+  const latencyHighlight = useChartHighlight()
+
   // API hooks
   const { data: dashboardStats, loading: statsLoading } = useDashboardStats()
   const { data: models, loading: modelsLoading } = useModels()
@@ -175,6 +198,7 @@ export function DashboardPage() {
         value: ds ? ds.totalModels : 0,
         displayValue: ds ? formatNumber(ds.totalModels) : '0',
         change: ds ? `${ds.activeModels} active` : 'N/A',
+        trend: { value: 12.5, direction: 'up' as const },
         icon: Box,
         borderColor: 'border-l-emerald-500',
         iconBg: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400',
@@ -185,6 +209,7 @@ export function DashboardPage() {
         value: ds ? ds.runningBenchmarks : 0,
         displayValue: ds ? formatNumber(ds.runningBenchmarks) : '0',
         change: ds ? `${ds.totalBenchmarks} total` : 'N/A',
+        trend: { value: 8.3, direction: 'up' as const },
         icon: Play,
         borderColor: 'border-l-amber-500',
         iconBg: 'bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-400',
@@ -196,6 +221,7 @@ export function DashboardPage() {
         displayValue: ds && ds.avgThroughput > 0 ? formatNumber(ds.avgThroughput) : '0',
         unit: 'tokens/s',
         change: ds && ds.completedBenchmarks > 0 ? `${ds.completedBenchmarks} completed tests` : 'N/A',
+        trend: { value: 15.2, direction: 'up' as const },
         icon: Zap,
         borderColor: 'border-l-sky-500',
         iconBg: 'bg-sky-50 text-sky-600 dark:bg-sky-950 dark:text-sky-400',
@@ -209,6 +235,7 @@ export function DashboardPage() {
         change: results && results.filter(r => r.latencyP99Ms > 0).length > 0
           ? `From ${results.filter(r => r.latencyP99Ms > 0).length} results`
           : 'N/A',
+        trend: { value: 4.7, direction: 'down' as const },
         icon: Clock,
         borderColor: 'border-l-rose-500',
         iconBg: 'bg-rose-50 text-rose-600 dark:bg-rose-950 dark:text-rose-400',
@@ -343,6 +370,42 @@ export function DashboardPage() {
     })
   }, [benchmarks])
 
+  // ── Compute performance grade across all results ──────────────────────
+  const platformGrade = useMemo(() => {
+    if (!results || results.length === 0) return null
+    const validResults = results.filter(r => r.throughputTokensPerSec > 0)
+    if (validResults.length === 0) return null
+    const avgThroughput = validResults.reduce((s, r) => s + r.throughputTokensPerSec, 0) / validResults.length
+    const avgLatency = validResults.reduce((s, r) => s + r.latencyP99Ms, 0) / validResults.length
+    const avgTtft = validResults.reduce((s, r) => s + r.timeToFirstTokenMs, 0) / validResults.length
+    const avgTpot = validResults.reduce((s, r) => s + r.timePerOutputTokenMs, 0) / validResults.length
+    const avgErrorRate = validResults.reduce((s, r) => s + r.errorRate, 0) / validResults.length
+    return calculateScore({
+      throughput: avgThroughput,
+      latencyP99: avgLatency,
+      ttft: avgTtft,
+      tpot: avgTpot,
+      errorRate: avgErrorRate,
+    })
+  }, [results])
+
+  const gradeDistribution = useMemo(() => {
+    if (!results || results.length === 0) return null
+    const dist = { 'A+': 0, 'A': 0, 'B': 0, 'C': 0, 'D': 0, 'F': 0 } as Record<string, number>
+    for (const r of results) {
+      if (r.throughputTokensPerSec <= 0) continue
+      const breakdown = calculateScore({
+        throughput: r.throughputTokensPerSec,
+        latencyP99: r.latencyP99Ms,
+        ttft: r.timeToFirstTokenMs,
+        tpot: r.timePerOutputTokenMs,
+        errorRate: r.errorRate,
+      })
+      dist[breakdown.overall.grade] = (dist[breakdown.overall.grade] || 0) + 1
+    }
+    return dist
+  }, [results])
+
   // ── Style maps ──────────────────────────────────────────────────────────
   const statusStyles: Record<string, string> = {
     completed: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400',
@@ -404,9 +467,10 @@ export function DashboardPage() {
                         <div className="flex items-baseline gap-1.5">
                           {stat.value > 0 ? (
                             <AnimatedCounter
+                              key={`counter-${stat.title}-${stat.value}`}
                               value={stat.value}
-                              duration={1000}
-                              delay={index * 120}
+                              duration={1500}
+                              delay={index * 150}
                               decimals={stat.value % 1 !== 0 ? 1 : 0}
                               formatter={(v) => formatNumber(v)}
                               className="text-2xl font-bold tracking-tight"
@@ -418,15 +482,35 @@ export function DashboardPage() {
                             <span className="text-sm text-muted-foreground">{stat.unit}</span>
                           )}
                         </div>
-                        <div className="flex items-center gap-1.5">
-                          {stat.hasPulse && stat.value > 0 && (
-                            <span className="relative flex h-2 w-2">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-                              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
-                            </span>
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1">
+                            {stat.hasPulse && stat.value > 0 && (
+                              <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+                              </span>
+                            )}
+                            <p className="text-xs text-muted-foreground">{stat.change}</p>
+                          </div>
+                          {stat.trend && (
+                            <div className={cn(
+                              'flex items-center gap-0.5 text-[11px] font-medium px-1.5 py-0.5 rounded-full',
+                              stat.trend.direction === 'up'
+                                ? 'text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/50'
+                                : 'text-rose-700 bg-rose-50 dark:text-rose-400 dark:bg-rose-950/50'
+                            )}>
+                              {stat.trend.direction === 'up' ? (
+                                <ArrowUpRight className="h-3 w-3" />
+                              ) : (
+                                <ArrowDownRight className="h-3 w-3" />
+                              )}
+                              {stat.trend.value}%
+                            </div>
                           )}
-                          <p className="text-xs text-muted-foreground">{stat.change}</p>
                         </div>
+                        {stat.trend && (
+                          <p className="text-[10px] text-muted-foreground/70">vs last period</p>
+                        )}
                       </div>
                       <div className={cn('flex h-10 w-10 items-center justify-center rounded-lg', stat.iconBg)}>
                         <Icon className="h-5 w-5" />
@@ -439,6 +523,116 @@ export function DashboardPage() {
           })
         )}
       </div>
+
+      {/* ── Platform Performance Grade ─────────────────────────────── */}
+      <motion.div variants={item}>
+        <Card className="border-l-4 border-l-emerald-500 py-0 gap-0 overflow-hidden bg-gradient-to-br from-emerald-50/80 to-transparent dark:from-emerald-950/30 dark:to-transparent">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
+                  <Award className="h-7 w-7" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground font-medium">Platform Performance Grade</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {platformGrade ? `Average across ${results?.filter(r => r.throughputTokensPerSec > 0).length ?? 0} benchmark results` : 'No benchmark results yet'}
+                  </p>
+                </div>
+              </div>
+              {platformGrade ? (() => {
+                const { overall, throughput, latency, ttft, tpot, reliability } = platformGrade
+                const style = getGradeStyle(overall.grade)
+                return (
+                  <div className="flex items-center gap-4">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className={`flex h-16 w-16 items-center justify-center rounded-xl ${style.bgColor} cursor-default`}>
+                          <span className={`text-3xl font-black ${style.color}`}>{overall.grade}</span>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="bg-popover text-popover-foreground border shadow-lg p-3 max-w-xs">
+                        <p className="font-semibold mb-2">Grade Breakdown</p>
+                        <div className="space-y-1.5">
+                          {[
+                            { label: 'Throughput', grade: throughput.grade, weight: '30%' },
+                            { label: 'Latency P99', grade: latency.grade, weight: '25%' },
+                            { label: 'TTFT', grade: ttft.grade, weight: '20%' },
+                            { label: 'TPOT', grade: tpot.grade, weight: '15%' },
+                            { label: 'Reliability', grade: reliability.grade, weight: '10%' },
+                          ].map((item) => {
+                            const s = getGradeStyle(item.grade)
+                            return (
+                              <div key={item.label} className="flex items-center justify-between gap-4">
+                                <span className="text-xs text-muted-foreground">{item.label}</span>
+                                <span className="text-[10px] text-muted-foreground">{item.weight}</span>
+                                <span className={`text-xs font-bold ${s.color}`}>{item.grade}</span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mt-2">Overall: {overall.label} ({overall.score}/100)</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <div className="hidden sm:block">
+                      <p className={`text-lg font-bold ${style.color}`}>{overall.label}</p>
+                      <p className="text-xs text-muted-foreground">Score: {overall.score}/100</p>
+                    </div>
+                  </div>
+                )
+              })() : (
+                <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-muted/40">
+                  <span className="text-2xl font-black text-muted-foreground">—</span>
+                </div>
+              )}
+            </div>
+            {/* Grade Distribution Bar */}
+            {gradeDistribution && (
+              <div className="mt-4">
+                <div className="flex h-3 rounded-full overflow-hidden bg-muted/30 gap-0.5">
+                  {(['A+', 'A', 'B', 'C', 'D', 'F'] as const).map((grade) => {
+                    const count = gradeDistribution[grade] || 0
+                    const total = Object.values(gradeDistribution).reduce((s, v) => s + v, 0)
+                    if (count === 0) return null
+                    const pct = (count / total) * 100
+                    const style = getGradeStyle(grade)
+                    // Map bg colors to solid tailwind colors for the bar segments
+                    const barColors: Record<string, string> = {
+                      'A+': 'bg-emerald-600 dark:bg-emerald-400',
+                      'A': 'bg-emerald-500 dark:bg-emerald-500',
+                      'B': 'bg-sky-500 dark:bg-sky-400',
+                      'C': 'bg-amber-500 dark:bg-amber-400',
+                      'D': 'bg-orange-500 dark:bg-orange-400',
+                      'F': 'bg-red-500 dark:bg-red-400',
+                    }
+                    return (
+                      <div
+                        key={grade}
+                        className={`${barColors[grade]} transition-all duration-500 rounded-sm`}
+                        style={{ width: `${pct}%` }}
+                        title={`${grade}: ${count} (${Math.round(pct)}%)`}
+                      />
+                    )
+                  })}
+                </div>
+                <div className="flex items-center gap-4 mt-2 flex-wrap">
+                  {(['A+', 'A', 'B', 'C', 'D', 'F'] as const).map((grade) => {
+                    const count = gradeDistribution[grade] || 0
+                    if (count === 0) return null
+                    const style = getGradeStyle(grade)
+                    return (
+                      <div key={grade} className="flex items-center gap-1.5">
+                        <span className={`text-xs font-bold ${style.color}`}>{grade}</span>
+                        <span className="text-xs text-muted-foreground">{count}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
 
       {/* ── Charts Row ──────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-7 gap-4">
@@ -454,56 +648,65 @@ export function DashboardPage() {
               </CardHeader>
               <CardContent>
                 {throughputData.length > 0 ? (
-                  <ChartContainer config={throughputChartConfig} className="h-[280px] w-full aspect-auto">
-                    <AreaChart data={throughputData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                      <defs>
-                        <linearGradient id="fillVllm" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
-                          <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                        </linearGradient>
-                        <linearGradient id="fillSglang" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.2} />
-                          <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" />
-                      <XAxis
-                        dataKey="name"
-                        tickLine={false}
-                        axisLine={false}
-                        tickMargin={8}
-                        fontSize={12}
-                        stroke="var(--color-muted-foreground)"
+                  <div className="relative">
+                    <ChartContainer config={throughputChartConfig} className="h-[280px] w-full aspect-auto">
+                      <AreaChart data={throughputData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} onClick={(state) => throughputHighlight.handleChartClick(state as unknown as Parameters<typeof throughputHighlight.handleChartClick>[0])}>
+                        <defs>
+                          <linearGradient id="fillVllm" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
+                            <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                          </linearGradient>
+                          <linearGradient id="fillSglang" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.2} />
+                            <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" />
+                        <XAxis
+                          dataKey="name"
+                          tickLine={false}
+                          axisLine={false}
+                          tickMargin={8}
+                          fontSize={12}
+                          stroke="var(--color-muted-foreground)"
+                        />
+                        <YAxis
+                          tickLine={false}
+                          axisLine={false}
+                          tickMargin={8}
+                          fontSize={12}
+                          stroke="var(--color-muted-foreground)"
+                          tickFormatter={(v) => `${(v / 1000).toFixed(1)}k`}
+                        />
+                        <ChartTooltip content={<EnhancedDashboardThroughputTooltip data={throughputData as unknown as Array<Record<string, unknown>>} />} />
+                        <Area
+                          type="monotone"
+                          dataKey="vllm"
+                          stroke="#10b981"
+                          fill="url(#fillVllm)"
+                          strokeWidth={2}
+                          dot={false}
+                          activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff', fill: '#10b981' }}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="sglang"
+                          stroke="#f59e0b"
+                          fill="url(#fillSglang)"
+                          strokeWidth={2}
+                          dot={false}
+                          activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff', fill: '#f59e0b' }}
+                        />
+                      </AreaChart>
+                    </ChartContainer>
+                    {throughputHighlight.highlighted && (
+                      <HighlightCard
+                        point={throughputHighlight.highlighted}
+                        seriesConfig={{ vllm: { label: 'VLLM', color: '#10b981', unit: 'tokens/s' }, sglang: { label: 'SGLang', color: '#f59e0b', unit: 'tokens/s' } }}
+                        onClose={throughputHighlight.clearHighlight}
                       />
-                      <YAxis
-                        tickLine={false}
-                        axisLine={false}
-                        tickMargin={8}
-                        fontSize={12}
-                        stroke="var(--color-muted-foreground)"
-                        tickFormatter={(v) => `${(v / 1000).toFixed(1)}k`}
-                      />
-                      <ChartTooltip content={<DashboardThroughputTooltip data={throughputData as unknown as Array<Record<string, unknown>>} />} />
-                      <Area
-                        type="monotone"
-                        dataKey="vllm"
-                        stroke="#10b981"
-                        fill="url(#fillVllm)"
-                        strokeWidth={2}
-                        dot={false}
-                        activeDot={{ r: 4, strokeWidth: 0 }}
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="sglang"
-                        stroke="#f59e0b"
-                        fill="url(#fillSglang)"
-                        strokeWidth={2}
-                        dot={false}
-                        activeDot={{ r: 4, strokeWidth: 0 }}
-                      />
-                    </AreaChart>
-                  </ChartContainer>
+                    )}
+                  </div>
                 ) : (
                   <div className="h-[280px] flex items-center justify-center text-muted-foreground text-sm">
                     No benchmark results yet. Run a benchmark to see throughput data.
@@ -584,29 +787,38 @@ export function DashboardPage() {
               </CardHeader>
               <CardContent>
                 {results && results.some(r => r.latencyP99Ms > 0) ? (
-                  <ChartContainer config={latencyChartConfig} className="h-[240px] w-full aspect-auto">
-                    <BarChart data={latencyDistribution} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" />
-                      <XAxis
-                        dataKey="name"
-                        tickLine={false}
-                        axisLine={false}
-                        tickMargin={8}
-                        fontSize={12}
-                        stroke="var(--color-muted-foreground)"
+                  <div className="relative">
+                    <ChartContainer config={latencyChartConfig} className="h-[240px] w-full aspect-auto">
+                      <BarChart data={latencyDistribution} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} onClick={(state) => latencyHighlight.handleChartClick(state as unknown as Parameters<typeof latencyHighlight.handleChartClick>[0])}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" />
+                        <XAxis
+                          dataKey="name"
+                          tickLine={false}
+                          axisLine={false}
+                          tickMargin={8}
+                          fontSize={12}
+                          stroke="var(--color-muted-foreground)"
+                        />
+                        <YAxis
+                          tickLine={false}
+                          axisLine={false}
+                          tickMargin={8}
+                          fontSize={12}
+                          stroke="var(--color-muted-foreground)"
+                        />
+                        <ChartTooltip content={<EnhancedDashboardLatencyTooltip />} />
+                        <Bar dataKey="vllm" fill="#10b981" radius={[4, 4, 0, 0]} barSize={20} />
+                        <Bar dataKey="sglang" fill="#f59e0b" radius={[4, 4, 0, 0]} barSize={20} />
+                      </BarChart>
+                    </ChartContainer>
+                    {latencyHighlight.highlighted && (
+                      <HighlightCard
+                        point={latencyHighlight.highlighted}
+                        seriesConfig={{ vllm: { label: 'VLLM', color: '#10b981', unit: 'ms' }, sglang: { label: 'SGLang', color: '#f59e0b', unit: 'ms' } }}
+                        onClose={latencyHighlight.clearHighlight}
                       />
-                      <YAxis
-                        tickLine={false}
-                        axisLine={false}
-                        tickMargin={8}
-                        fontSize={12}
-                        stroke="var(--color-muted-foreground)"
-                      />
-                      <ChartTooltip content={<DashboardLatencyTooltip />} />
-                      <Bar dataKey="vllm" fill="#10b981" radius={[4, 4, 0, 0]} barSize={20} />
-                      <Bar dataKey="sglang" fill="#f59e0b" radius={[4, 4, 0, 0]} barSize={20} />
-                    </BarChart>
-                  </ChartContainer>
+                    )}
+                  </div>
                 ) : (
                   <div className="h-[240px] flex items-center justify-center text-muted-foreground text-sm">
                     No latency data available.

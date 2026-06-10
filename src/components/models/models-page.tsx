@@ -241,7 +241,7 @@ function ModelCard({
       exit={{ opacity: 0, y: -20, scale: 0.95 }}
       transition={{ duration: 0.2 }}
     >
-      <Card className={`group relative transition-all duration-200 hover:shadow-md py-0 gap-0 overflow-hidden border-l-4 ${model.engine === 'vllm' ? 'border-l-emerald-500' : 'border-l-amber-500'} ${isSelected ? 'border-primary shadow-md ring-1 ring-primary/30' : 'hover:border-primary/20'} hover:-translate-y-0.5 hover:shadow-lg`}>
+      <Card className={`group relative transition-all duration-200 hover:shadow-md py-0 gap-0 overflow-hidden border-l-4 ${model.engine === 'vllm' ? 'border-l-emerald-500' : 'border-l-amber-500'} ${isSelected ? 'border-emerald-400 shadow-md ring-2 ring-emerald-400/40 dark:border-emerald-500 dark:ring-emerald-500/40' : 'hover:border-primary/20'} hover:-translate-y-0.5 hover:shadow-lg`}>
         {/* Gradient overlay on hover */}
         <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none ${model.engine === 'vllm' ? 'bg-gradient-to-br from-emerald-50/40 to-transparent dark:from-emerald-950/20 dark:to-transparent' : 'bg-gradient-to-br from-amber-50/40 to-transparent dark:from-amber-950/20 dark:to-transparent'}`} />
         <CardHeader className="pb-3 pt-5 px-5">
@@ -997,28 +997,15 @@ export default function ModelsPage() {
               </Button>
             )}
             {comparisonSelectMode && !activeComparison && (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={handleCancelSelectMode}
-                  className="shrink-0"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleStartComparison}
-                  disabled={selectedForComparison.length < 2}
-                  className="shrink-0"
-                >
-                  <GitCompareArrows className="size-4" />
-                  Compare ({selectedForComparison.length}/4)
-                </Button>
-              </>
+              <Badge variant="outline" className="shrink-0 px-3 py-1.5 text-sm border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40">
+                <GitCompareArrows className="size-3.5 mr-1" />
+                Select models to compare
+              </Badge>
             )}
             {activeComparison && (
               <Button variant="outline" onClick={handleExitComparison} className="shrink-0">
                 <X className="size-4" />
-                Exit Comparison
+                Back to Models
               </Button>
             )}
             {!comparisonSelectMode && !activeComparison && (
@@ -1207,6 +1194,79 @@ export default function ModelsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Floating Comparison Bottom Bar */}
+      <AnimatePresence>
+        {comparisonSelectMode && !activeComparison && (
+          <motion.div
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl"
+          >
+            <div className="flex items-center justify-between gap-3 rounded-xl border bg-card/95 backdrop-blur-lg shadow-xl px-5 py-3.5 border-emerald-200 dark:border-emerald-800">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="flex size-8 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/60">
+                    <GitCompareArrows className="size-4 text-emerald-600 dark:text-emerald-400" />
+                  </span>
+                  <span className="text-sm font-medium">
+                    {selectedForComparison.length === 0 ? (
+                      'Select models'
+                    ) : (
+                      <>{selectedForComparison.length} model{selectedForComparison.length !== 1 ? 's' : ''} selected</>
+                    )}
+                  </span>
+                </div>
+                {selectedForComparison.length > 0 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto max-w-[300px] scrollbar-none">
+                    {selectedForComparison.map((model) => (
+                      <Badge
+                        key={model.id}
+                        variant="outline"
+                        className={`shrink-0 gap-1 px-2 py-0.5 text-xs ${
+                          model.engine === 'vllm'
+                            ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                            : 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
+                        }`}
+                      >
+                        {model.name}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleComparisonSelect(model)}
+                          className="ml-0.5 rounded-full p-0.5 hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+                        >
+                          <X className="size-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleCancelSelectMode}
+                  className="text-muted-foreground"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleStartComparison}
+                  disabled={selectedForComparison.length < 2}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-700 dark:hover:bg-emerald-600"
+                >
+                  <GitCompareArrows className="size-3.5" />
+                  Compare Now
+                </Button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

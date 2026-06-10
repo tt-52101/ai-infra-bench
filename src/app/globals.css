@@ -154,6 +154,16 @@
   animation: shimmer 1.8s ease-in-out infinite;
 }
 
+/* ─── Shimmer sweep animation (overlay variant) ──────────── */
+@keyframes shimmer-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 /* Staggered loading delay utility */
 .stagger-1 { animation-delay: 0.05s; }
 .stagger-2 { animation-delay: 0.10s; }

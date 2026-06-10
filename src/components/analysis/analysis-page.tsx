@@ -24,11 +24,13 @@ import {
   Cpu, HardDrive, Zap, Clock, ArrowUp, ArrowDown, Search, Download,
   RefreshCw, Plus, Trash2, Eye, Activity, Target, Gauge, Loader2,
   Flame, Lightbulb, ShieldAlert, Scale, Sparkles, ArrowRight,
-  Grid3X3, Tornado, Info,
+  Grid3X3, Tornado, Info, Thermometer,
 } from 'lucide-react'
+import { motion } from 'framer-motion'
 import { toast } from 'sonner'
 import { useAnalyses, useModels, useBenchmarks, useResults } from '@/hooks/use-api'
 import type { EngineType, ModelInfo } from '@/lib/types'
+import { EnhancedAnalysisTooltip, useChartHighlight, HighlightCard } from '@/components/ui/enhanced-chart-tooltip'
 
 // ─── Color Constants ─────────────────────────────────────────────
 const VLLM_COLOR = '#10b981'
@@ -230,21 +232,7 @@ function getRecommendations(dimension: string, selectedModel: string): Array<{ t
 }
 
 // ─── Custom Chart Tooltip ────────────────────────────────────────
-function AnalysisTooltip({ active, payload, label, yLabel }: { active?: boolean; payload?: Array<{ value: number; dataKey: string; color: string }>; label?: number | string; yLabel: string }) {
-  if (!active || !payload?.length) return null
-  return (
-    <div className="bg-popover border border-border rounded-lg px-3 py-2 shadow-xl text-xs">
-      <p className="font-semibold mb-1">{label}</p>
-      {payload.map((p) => (
-        <div key={p.dataKey} className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
-          <span className="text-muted-foreground">{p.dataKey}:</span>
-          <span className="font-mono font-medium">{p.value.toLocaleString()} {yLabel.includes('ms') ? 'ms' : yLabel.includes('GB') ? 'GB' : yLabel.includes('%') ? '%' : ''}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
+// (Now using EnhancedAnalysisTooltip from enhanced-chart-tooltip.tsx)
 
 // ─── Correlation Heatmap Data ────────────────────────────────────
 const HEATMAP_PARAMETERS = [
@@ -578,6 +566,163 @@ function generateSensitivityData(): SensitivityItem[] {
   return items
 }
 
+// ─── Parameter Sensitivity Heatmap Data ──────────────────────────
+const SENSITIVITY_HEATMAP_PARAMS = [
+  { key: 'max_num_seqs', label: 'Max Num Sequences' },
+  { key: 'gpu_mem_util', label: 'GPU Mem Util' },
+  { key: 'max_model_length', label: 'Max Model Length' },
+  { key: 'chunk_prefill', label: 'Chunk Prefill' },
+  { key: 'block_size', label: 'Block Size' },
+  { key: 'temperature', label: 'Temperature' },
+]
+
+const SENSITIVITY_HEATMAP_METRICS = [
+  { key: 'throughput', label: 'Throughput' },
+  { key: 'latency_p99', label: 'Latency P99' },
+  { key: 'ttft', label: 'TTFT' },
+  { key: 'tpot', label: 'TPOT' },
+  { key: 'memory_usage', label: 'Memory Usage' },
+]
+
+function generateSensitivityMatrix(engine: EngineType | 'both'): Record<string, Record<string, number>> {
+  // Base sensitivity scores (0-100) - how much changing a parameter affects a metric
+  // VLLM base values
+  const vllmBase: Record<string, Record<string, number>> = {
+    max_num_seqs: {
+      throughput: 75, latency_p99: 80, ttft: 45, tpot: 50, memory_usage: 35,
+    },
+    gpu_mem_util: {
+      throughput: 90, latency_p99: 40, ttft: 30, tpot: 25, memory_usage: 70,
+    },
+    max_model_length: {
+      throughput: 30, latency_p99: 50, ttft: 55, tpot: 45, memory_usage: 85,
+    },
+    chunk_prefill: {
+      throughput: 35, latency_p99: 30, ttft: 60, tpot: 20, memory_usage: 25,
+    },
+    block_size: {
+      throughput: 15, latency_p99: 12, ttft: 10, tpot: 10, memory_usage: 20,
+    },
+    temperature: {
+      throughput: 7, latency_p99: 5, ttft: 3, tpot: 3, memory_usage: 2,
+    },
+  }
+
+  // SGLang variations - slightly different sensitivities
+  const sglangBase: Record<string, Record<string, number>> = {
+    max_num_seqs: {
+      throughput: 70, latency_p99: 78, ttft: 40, tpot: 55, memory_usage: 38,
+    },
+    gpu_mem_util: {
+      throughput: 85, latency_p99: 38, ttft: 28, tpot: 22, memory_usage: 75,
+    },
+    max_model_length: {
+      throughput: 28, latency_p99: 48, ttft: 52, tpot: 42, memory_usage: 82,
+    },
+    chunk_prefill: {
+      throughput: 40, latency_p99: 35, ttft: 65, tpot: 25, memory_usage: 28,
+    },
+    block_size: {
+      throughput: 18, latency_p99: 15, ttft: 12, tpot: 12, memory_usage: 22,
+    },
+    temperature: {
+      throughput: 6, latency_p99: 4, ttft: 2, tpot: 2, memory_usage: 1,
+    },
+  }
+
+  const base = engine === 'sglang' ? sglangBase : vllmBase
+  const matrix: Record<string, Record<string, number>> = {}
+
+  SENSITIVITY_HEATMAP_PARAMS.forEach((param) => {
+    matrix[param.key] = {}
+    SENSITIVITY_HEATMAP_METRICS.forEach((metric) => {
+      let value = base[param.key]?.[metric.key] ?? 10
+      // Add small noise for realism
+      value += Math.round((Math.random() - 0.5) * 6)
+      value = Math.max(0, Math.min(100, value))
+      matrix[param.key][metric.key] = value
+    })
+  })
+
+  // If "both" engines, average them with slight variation
+  if (engine === 'both') {
+    SENSITIVITY_HEATMAP_PARAMS.forEach((param) => {
+      SENSITIVITY_HEATMAP_METRICS.forEach((metric) => {
+        const v = vllmBase[param.key]?.[metric.key] ?? 10
+        const s = sglangBase[param.key]?.[metric.key] ?? 10
+        let avg = Math.round((v + s) / 2)
+        avg += Math.round((Math.random() - 0.5) * 4)
+        avg = Math.max(0, Math.min(100, avg))
+        matrix[param.key][metric.key] = avg
+      })
+    })
+  }
+
+  return matrix
+}
+
+function getSensitivityColor(score: number): string {
+  if (score <= 20) {
+    // Cool blue/teal - very low sensitivity
+    const t = score / 20
+    const r = Math.round(20 + t * 0)
+    const g = Math.round(140 + t * 40)
+    const b = Math.round(160 + t * 20)
+    return `rgb(${r}, ${g}, ${b})`
+  } else if (score <= 40) {
+    // Green - low sensitivity
+    const t = (score - 20) / 20
+    const r = Math.round(20 + t * 10)
+    const g = Math.round(180 - t * 20)
+    const b = Math.round(80 - t * 30)
+    return `rgb(${r}, ${g}, ${b})`
+  } else if (score <= 60) {
+    // Yellow/amber - medium sensitivity
+    const t = (score - 40) / 20
+    const r = Math.round(30 + t * 220)
+    const g = Math.round(160 - t * 20)
+    const b = Math.round(50 - t * 30)
+    return `rgb(${r}, ${g}, ${b})`
+  } else if (score <= 80) {
+    // Orange - high sensitivity
+    const t = (score - 60) / 20
+    const r = Math.round(250)
+    const g = Math.round(140 - t * 70)
+    const b = Math.round(20 + t * 0)
+    return `rgb(${r}, ${g}, ${b})`
+  } else {
+    // Red/hot - very high sensitivity
+    const t = (score - 80) / 20
+    const r = Math.round(240 + t * 15)
+    const g = Math.round(70 - t * 40)
+    const b = Math.round(20 + t * 10)
+    return `rgb(${r}, ${g}, ${b})`
+  }
+}
+
+function getSensitivityTextColor(score: number): string {
+  // White text on dark backgrounds, dark text on light backgrounds
+  if (score > 60) return 'text-white'
+  if (score > 40) return 'text-gray-900'
+  return 'text-white'
+}
+
+function getSensitivityInterpretation(score: number): string {
+  if (score <= 20) return 'Very low sensitivity — changing this parameter has minimal effect'
+  if (score <= 40) return 'Low sensitivity — this parameter has a modest influence'
+  if (score <= 60) return 'Medium sensitivity — changes to this parameter noticeably affect performance'
+  if (score <= 80) return 'High sensitivity — this parameter significantly impacts this metric'
+  return 'Very high sensitivity — even small changes to this parameter have major impact'
+}
+
+function getSensitivityLevel(score: number): 'Very Low' | 'Low' | 'Medium' | 'High' | 'Very High' {
+  if (score <= 20) return 'Very Low'
+  if (score <= 40) return 'Low'
+  if (score <= 60) return 'Medium'
+  if (score <= 80) return 'High'
+  return 'Very High'
+}
+
 // ─── Main Component ──────────────────────────────────────────────
 export default function AnalysisPage() {
   const [selectedDimension, setSelectedDimension] = useState('concurrency_throughput')
@@ -586,6 +731,10 @@ export default function AnalysisPage() {
   const [selectedEngine, setSelectedEngine] = useState<EngineType | 'both'>('both')
   const [creating, setCreating] = useState(false)
   const [activeMainTab, setActiveMainTab] = useState('inflection')
+
+  // Click-to-highlight state for charts
+  const singleModelHighlight = useChartHighlight()
+  const multiModelHighlight = useChartHighlight()
 
   // Correlation heatmap state
   const [correlationMatrix] = useState(() => generateCorrelationMatrix())
@@ -599,6 +748,11 @@ export default function AnalysisPage() {
   // Sensitivity data
   const [sensitivityData] = useState(() => generateSensitivityData())
   const [selectedSensitivityMetric, setSelectedSensitivityMetric] = useState('Throughput')
+
+  // Parameter Sensitivity Heatmap state
+  const [heatmapEngine, setHeatmapEngine] = useState<EngineType | 'both'>('both')
+  const sensitivityMatrix = useMemo(() => generateSensitivityMatrix(heatmapEngine), [heatmapEngine])
+  const [sensitivityHovered, setSensitivityHovered] = useState<{ param: string; metric: string } | null>(null)
 
   // API hooks
   const { data: analyses, loading: analysesLoading, addAnalysis, removeAnalysis } = useAnalyses()
@@ -708,6 +862,19 @@ export default function AnalysisPage() {
       negative: d.negativeImpact,
     }))
   }, [sensitivityData, selectedSensitivityMetric])
+
+  // ─── Sensitivity Heatmap: Top 3 insights ─────────────────────
+  const sensitivityInsights = useMemo(() => {
+    const pairs: Array<{ param: string; paramLabel: string; metric: string; metricLabel: string; score: number }> = []
+    SENSITIVITY_HEATMAP_PARAMS.forEach((param) => {
+      SENSITIVITY_HEATMAP_METRICS.forEach((metric) => {
+        const score = sensitivityMatrix[param.key]?.[metric.key] ?? 0
+        pairs.push({ param: param.key, paramLabel: param.label, metric: metric.key, metricLabel: metric.label, score })
+      })
+    })
+    // Sort by score descending, take top 3
+    return pairs.sort((a, b) => b.score - a.score).slice(0, 3)
+  }, [sensitivityMatrix])
 
   // ─── Risk color ───────────────────────────────────────────────
   const riskColor = { Low: 'text-emerald-600', Medium: 'text-amber-600', High: 'text-red-600' }
@@ -909,6 +1076,10 @@ export default function AnalysisPage() {
             <Tornado className="w-4 h-4" />
             Sensitivity Analysis
           </TabsTrigger>
+          <TabsTrigger value="sensitivity-heatmap" className="gap-1.5">
+            <Thermometer className="w-4 h-4" />
+            Sensitivity Heatmap
+          </TabsTrigger>
         </TabsList>
 
         {/* ═══════════════════════════════════════════════════════
@@ -1016,14 +1187,14 @@ export default function AnalysisPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-[450px]">
+                  <div className="relative h-[450px]">
                     {selectedModel ? (
                       <ResponsiveContainer width="100%" height="100%">
-                        <ComposedChart data={singleModelData} margin={{ top: 10, right: 30, left: 20, bottom: 10 }}>
+                        <ComposedChart data={singleModelData} margin={{ top: 10, right: 30, left: 20, bottom: 10 }} onClick={(state) => singleModelHighlight.handleChartClick(state as unknown as Parameters<typeof singleModelHighlight.handleChartClick>[0])}>
                           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                           <XAxis dataKey="x" tick={{ fontSize: 12 }} label={{ value: dimension.xLabel, position: 'insideBottom', offset: -5, style: { fontSize: 12 } }} tickFormatter={formatXAxis} />
                           <YAxis tick={{ fontSize: 12 }} label={{ value: dimension.yLabel, angle: -90, position: 'insideLeft', style: { fontSize: 12 } }} />
-                          <Tooltip content={<AnalysisTooltip yLabel={dimension.yLabel} />} />
+                          <Tooltip content={<EnhancedAnalysisTooltip yLabel={dimension.yLabel} dimension={selectedDimension} />} />
                           <Legend wrapperStyle={{ fontSize: 12 }} />
                           <ReferenceArea x1={optimalStart} x2={optimalEnd} fill="#10b981" fillOpacity={0.08} stroke="#10b981" strokeOpacity={0.2} />
                           <ReferenceLine x={inflectionX} stroke="#ef4444" strokeDasharray="6 4" strokeWidth={2} label={{ value: `Inflection: ${selectedDimension === 'gpumem_performance' ? `${(inflectionX * 100).toFixed(0)}%` : inflectionX.toLocaleString()}`, position: 'top', fill: '#ef4444', fontSize: 12, fontWeight: 600 }} />
@@ -1031,10 +1202,10 @@ export default function AnalysisPage() {
                             <ReferenceLine y={80} stroke="#ef4444" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: 'GPU Limit (80GB)', position: 'right', fill: '#ef4444', fontSize: 11 }} />
                           )}
                           {(selectedEngine === 'both' || selectedEngine === 'vllm') && (
-                            <Line type="monotone" dataKey="VLLM" stroke={VLLM_COLOR} strokeWidth={2.5} dot={{ r: 4, fill: VLLM_COLOR, strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+                            <Line type="monotone" dataKey="VLLM" stroke={VLLM_COLOR} strokeWidth={2.5} dot={{ r: 4, fill: VLLM_COLOR, strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 7, strokeWidth: 2, stroke: '#fff', fill: VLLM_COLOR }} />
                           )}
                           {(selectedEngine === 'both' || selectedEngine === 'sglang') && (
-                            <Line type="monotone" dataKey="SGLang" stroke={SGLANG_COLOR} strokeWidth={2.5} dot={{ r: 4, fill: SGLANG_COLOR, strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+                            <Line type="monotone" dataKey="SGLang" stroke={SGLANG_COLOR} strokeWidth={2.5} dot={{ r: 4, fill: SGLANG_COLOR, strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 7, strokeWidth: 2, stroke: '#fff', fill: SGLANG_COLOR }} />
                           )}
                         </ComposedChart>
                       </ResponsiveContainer>
@@ -1042,6 +1213,16 @@ export default function AnalysisPage() {
                       <div className="flex items-center justify-center h-full text-muted-foreground">
                         <p>Select a model to view analysis chart</p>
                       </div>
+                    )}
+                    {singleModelHighlight.highlighted && (
+                      <HighlightCard
+                        point={singleModelHighlight.highlighted}
+                        seriesConfig={{
+                          VLLM: { label: 'VLLM', color: VLLM_COLOR },
+                          SGLang: { label: 'SGLang', color: SGLANG_COLOR },
+                        }}
+                        onClose={singleModelHighlight.clearHighlight}
+                      />
                     )}
                   </div>
                 </CardContent>
@@ -1057,21 +1238,21 @@ export default function AnalysisPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-[450px]">
+                  <div className="relative h-[450px]">
                     {modelNames.length > 0 ? (
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={multiModelData} margin={{ top: 10, right: 30, left: 20, bottom: 10 }}>
+                        <LineChart data={multiModelData} margin={{ top: 10, right: 30, left: 20, bottom: 10 }} onClick={(state) => multiModelHighlight.handleChartClick(state as unknown as Parameters<typeof multiModelHighlight.handleChartClick>[0])}>
                           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                           <XAxis dataKey="x" tick={{ fontSize: 12 }} label={{ value: dimension.xLabel, position: 'insideBottom', offset: -5, style: { fontSize: 12 } }} tickFormatter={formatXAxis} />
                           <YAxis tick={{ fontSize: 12 }} label={{ value: dimension.yLabel, angle: -90, position: 'insideLeft', style: { fontSize: 12 } }} />
-                          <Tooltip content={<AnalysisTooltip yLabel={dimension.yLabel} />} />
+                          <Tooltip content={<EnhancedAnalysisTooltip yLabel={dimension.yLabel} dimension={selectedDimension} />} />
                           <Legend wrapperStyle={{ fontSize: 12 }} />
                           <ReferenceLine x={inflectionX} stroke="#ef4444" strokeDasharray="6 4" strokeWidth={2} label={{ value: 'Inflection', position: 'top', fill: '#ef4444', fontSize: 12, fontWeight: 600 }} />
                           {selectedDimension === 'seqlen_memory' && (
                             <ReferenceLine y={80} stroke="#ef4444" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: 'GPU Limit', position: 'right', fill: '#ef4444', fontSize: 11 }} />
                           )}
                           {modelNames.map((m) => (
-                            <Line key={m} type="monotone" dataKey={m} stroke={modelColors[m]} strokeWidth={2} dot={{ r: 3, fill: modelColors[m], strokeWidth: 1.5, stroke: '#fff' }} />
+                            <Line key={m} type="monotone" dataKey={m} stroke={modelColors[m]} strokeWidth={2} dot={{ r: 3, fill: modelColors[m], strokeWidth: 1.5, stroke: '#fff' }} activeDot={{ r: 6, strokeWidth: 2, stroke: '#fff' }} />
                           ))}
                         </LineChart>
                       </ResponsiveContainer>
@@ -1079,6 +1260,13 @@ export default function AnalysisPage() {
                       <div className="flex items-center justify-center h-full text-muted-foreground">
                         <p>No models available for comparison</p>
                       </div>
+                    )}
+                    {multiModelHighlight.highlighted && (
+                      <HighlightCard
+                        point={multiModelHighlight.highlighted}
+                        seriesConfig={Object.fromEntries(modelNames.map((m) => [m, { label: m, color: modelColors[m] }]))}
+                        onClose={multiModelHighlight.clearHighlight}
+                      />
                     )}
                   </div>
                 </CardContent>
@@ -1642,6 +1830,312 @@ export default function AnalysisPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ═══════════════════════════════════════════════════════
+            TAB 5: Parameter Sensitivity Heatmap
+            ═══════════════════════════════════════════════════════ */}
+        <TabsContent value="sensitivity-heatmap" className="space-y-4">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+          >
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Thermometer className="w-5 h-5 text-red-500" />
+                      Parameter Sensitivity Heatmap
+                    </CardTitle>
+                    <CardDescription>
+                      How different parameter combinations affect performance metrics — sensitivity scores range from 0 (no impact) to 100 (critical impact)
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground font-medium">Engine:</span>
+                    <div className="flex rounded-md border overflow-hidden">
+                      {(['both', 'vllm', 'sglang'] as const).map((eng) => (
+                        <Button
+                          key={eng}
+                          variant="ghost"
+                          size="sm"
+                          className={`h-7 px-3 text-xs rounded-none ${
+                            heatmapEngine === eng
+                              ? eng === 'vllm'
+                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
+                                : eng === 'sglang'
+                                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'
+                                  : 'bg-primary/10 text-primary'
+                              : 'text-muted-foreground'
+                          }`}
+                          onClick={() => setHeatmapEngine(eng)}
+                        >
+                          {eng === 'both' ? 'Both' : eng === 'vllm' ? 'VLLM' : 'SGLang'}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto pb-2">
+                  <div className="min-w-[640px]">
+                    {/* Column headers (metrics) */}
+                    <div className="flex mb-1">
+                      <div className="w-[140px] shrink-0" />
+                      {SENSITIVITY_HEATMAP_METRICS.map((metric) => (
+                        <div key={metric.key} className="flex-1 min-w-[90px] text-center">
+                          <span
+                            className="text-xs font-medium text-muted-foreground inline-block"
+                            style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', height: '65px' }}
+                          >
+                            {metric.label}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Heatmap rows (parameters) */}
+                    {SENSITIVITY_HEATMAP_PARAMS.map((param, rowIdx) => (
+                      <motion.div
+                        key={param.key}
+                        className="flex items-center mb-1"
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.3, delay: rowIdx * 0.05 }}
+                      >
+                        <div className="w-[140px] shrink-0 pr-3 text-right">
+                          <span className="text-xs font-medium text-foreground">{param.label}</span>
+                        </div>
+                        {SENSITIVITY_HEATMAP_METRICS.map((metric) => {
+                          const score = sensitivityMatrix[param.key]?.[metric.key] ?? 0
+                          const isHovered = sensitivityHovered?.param === param.key && sensitivityHovered?.metric === metric.key
+
+                          return (
+                            <Tooltip key={`${param.key}-${metric.key}`}>
+                              <TooltipTrigger asChild>
+                                <motion.div
+                                  className={`flex-1 min-w-[90px] h-[52px] flex items-center justify-center cursor-pointer transition-all rounded-md border border-border/20 mx-0.5 ${
+                                    isHovered ? 'ring-2 ring-primary z-10 scale-110 shadow-lg' : 'hover:scale-105'
+                                  }`}
+                                  style={{ backgroundColor: getSensitivityColor(score) }}
+                                  onMouseEnter={() => setSensitivityHovered({ param: param.key, metric: metric.key })}
+                                  onMouseLeave={() => setSensitivityHovered(null)}
+                                  initial={{ opacity: 0, scale: 0.8 }}
+                                  animate={{ opacity: 1, scale: isHovered ? 1.1 : 1 }}
+                                  transition={{ duration: 0.2, delay: rowIdx * 0.03 }}
+                                >
+                                  <span className={`text-xs font-mono font-bold ${getSensitivityTextColor(score)}`}>
+                                    {score}
+                                  </span>
+                                </motion.div>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="max-w-[300px]">
+                                <div className="space-y-1.5">
+                                  <p className="font-semibold text-xs">Parameter: {param.label}</p>
+                                  <p className="text-xs opacity-90">Metric: {metric.label}</p>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs opacity-80">Sensitivity:</span>
+                                    <span className="font-mono font-bold text-sm">{score}%</span>
+                                    <Badge
+                                      variant="outline"
+                                      className={`text-[10px] ${
+                                        score > 80 ? 'border-red-400 text-red-600' :
+                                        score > 60 ? 'border-orange-400 text-orange-600' :
+                                        score > 40 ? 'border-amber-400 text-amber-600' :
+                                        score > 20 ? 'border-emerald-400 text-emerald-600' :
+                                        'border-teal-400 text-teal-600'
+                                      }`}
+                                    >
+                                      {getSensitivityLevel(score)}
+                                    </Badge>
+                                  </div>
+                                  <p className="text-[11px] opacity-70 leading-relaxed">{getSensitivityInterpretation(score)}</p>
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          )
+                        })}
+                      </motion.div>
+                    ))}
+
+                    {/* Color Scale Legend */}
+                    <div className="mt-6 pt-4 border-t">
+                      <div className="flex items-center justify-center gap-2 mb-2">
+                        <span className="text-xs text-muted-foreground font-medium">Low Sensitivity</span>
+                        <div className="flex items-center gap-0.5">
+                          {[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map((v) => (
+                            <div
+                              key={v}
+                              className="w-8 h-6 flex items-center justify-center rounded-sm"
+                              style={{ backgroundColor: getSensitivityColor(v) }}
+                            >
+                              <span className={`text-[8px] font-mono ${getSensitivityTextColor(v)}`}>
+                                {v}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        <span className="text-xs text-muted-foreground font-medium">High Sensitivity</span>
+                      </div>
+                      <div className="flex items-center justify-center gap-4 mt-2">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: getSensitivityColor(10) }} />
+                          <span className="text-[10px] text-muted-foreground">Very Low (0-20)</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: getSensitivityColor(30) }} />
+                          <span className="text-[10px] text-muted-foreground">Low (20-40)</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: getSensitivityColor(50) }} />
+                          <span className="text-[10px] text-muted-foreground">Medium (40-60)</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: getSensitivityColor(70) }} />
+                          <span className="text-[10px] text-muted-foreground">High (60-80)</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: getSensitivityColor(90) }} />
+                          <span className="text-[10px] text-muted-foreground">Very High (80-100)</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          {/* ─── Sensitivity Insights ────────────────────────────── */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.2 }}
+          >
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-amber-500" />
+                  Sensitivity Insights
+                </CardTitle>
+                <CardDescription>
+                  Top 3 most sensitive parameter-metric pairs requiring careful tuning
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {sensitivityInsights.map((insight, idx) => {
+                    const level = getSensitivityLevel(insight.score)
+                    const isHigh = insight.score > 80
+                    const isMedium = insight.score > 60 && insight.score <= 80
+                    const borderClass = isHigh ? 'border-l-red-500' : isMedium ? 'border-l-orange-500' : 'border-l-amber-500'
+                    const bgClass = isHigh ? 'bg-red-50/50 dark:bg-red-950/20' : isMedium ? 'bg-orange-50/50 dark:bg-orange-950/20' : 'bg-amber-50/50 dark:bg-amber-950/20'
+                    const iconClass = isHigh ? 'text-red-600' : isMedium ? 'text-orange-600' : 'text-amber-600'
+                    const badgeClass = isHigh ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400' : isMedium ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'
+
+                    return (
+                      <motion.div
+                        key={`${insight.param}-${insight.metric}`}
+                        className={`border-l-4 ${borderClass} ${bgClass} rounded-lg p-4`}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3, delay: 0.3 + idx * 0.1 }}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={`shrink-0 mt-0.5`}>
+                            {isHigh ? (
+                              <Flame className={`w-5 h-5 ${iconClass}`} />
+                            ) : isMedium ? (
+                              <AlertTriangle className={`w-5 h-5 ${iconClass}`} />
+                            ) : (
+                              <Info className={`w-5 h-5 ${iconClass}`} />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge variant="outline" className={`text-[10px] ${badgeClass}`}>
+                                #{idx + 1} Most Sensitive
+                              </Badge>
+                              <Badge variant="outline" className={`text-[10px] ${badgeClass}`}>
+                                {level}
+                              </Badge>
+                            </div>
+                            <p className="text-sm font-semibold mb-1">
+                              {insight.paramLabel} → {insight.metricLabel}
+                            </p>
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                                <div
+                                  className="h-full rounded-full transition-all duration-500"
+                                  style={{
+                                    width: `${insight.score}%`,
+                                    backgroundColor: getSensitivityColor(insight.score),
+                                  }}
+                                />
+                              </div>
+                              <span className="text-sm font-mono font-bold" style={{ color: getSensitivityColor(insight.score) }}>
+                                {insight.score}%
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-relaxed">
+                              {isHigh ? (
+                                <>
+                                  <span className="font-semibold">{insight.paramLabel}</span> has HIGH impact on{' '}
+                                  <span className="font-semibold">{insight.metricLabel}</span> ({insight.score}% sensitivity).
+                                  Consider tuning this parameter carefully for {insight.metricLabel.toLowerCase()}-critical workloads.
+                                </>
+                              ) : isMedium ? (
+                                <>
+                                  <span className="font-semibold">{insight.paramLabel}</span> has moderate-high impact on{' '}
+                                  <span className="font-semibold">{insight.metricLabel}</span> ({insight.score}% sensitivity).
+                                  Adjustments to this parameter will noticeably affect {insight.metricLabel.toLowerCase()}.
+                                </>
+                              ) : (
+                                <>
+                                  <span className="font-semibold">{insight.paramLabel}</span> has notable impact on{' '}
+                                  <span className="font-semibold">{insight.metricLabel}</span> ({insight.score}% sensitivity).
+                                  Monitor this pair when optimizing.
+                                </>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          {/* ─── Engine Comparison Note ──────────────────────────── */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.4 }}
+          >
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <Info className="w-5 h-5 text-sky-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium mb-1">About Parameter Sensitivity</p>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Sensitivity scores indicate how much a performance metric changes when a parameter varies across its full range.
+                      Scores are derived from benchmark data analysis across multiple configurations.
+                      {heatmapEngine === 'both' && ' Current view shows averaged sensitivity across both VLLM and SGLang engines.'}
+                      {heatmapEngine === 'vllm' && ' Current view shows VLLM-specific sensitivity scores.'}
+                      {heatmapEngine === 'sglang' && ' Current view shows SGLang-specific sensitivity scores.'}
+                      {' '}Use the engine toggle above to compare how sensitivity differs between inference engines.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
         </TabsContent>
       </Tabs>
     </div>

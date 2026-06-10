@@ -16,6 +16,7 @@ import { SettingsPage } from '@/components/settings/settings-page'
 import { AppSidebar } from '@/components/app-sidebar'
 import { CommandPalette } from '@/components/command-palette'
 import { NotificationCenter } from '@/components/notification-center'
+import { AIChatWidget } from '@/components/chat/ai-chat-widget'
 import {
   SidebarProvider,
   SidebarInset,
@@ -187,6 +188,7 @@ export default function Home() {
           </SidebarInset>
         </div>
       </div>
+      <AIChatWidget />
     </SidebarProvider>
   )
 }

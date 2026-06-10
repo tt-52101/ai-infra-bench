@@ -1,36 +1,34 @@
-# Task 5 - Update Benchmark Page to Use Real API Data
+# Task 5: Enhance Chart Tooltips and Interactivity Across the Platform
 
 ## Agent: full-stack-developer
 
 ## Summary
-Updated the Benchmark page (`src/components/benchmark/benchmark-page.tsx`) to use real API data via hooks from `@/hooks/use-api` instead of hardcoded mock data and Zustand store.
+Created enhanced chart tooltip system with framer-motion animations, dark theme support, engine badges, comparison indicators, and click-to-highlight feature across all chart pages (Dashboard, Reports, Analysis).
 
-## Key Changes
+## Files Created
+1. `src/components/ui/enhanced-chart-tooltip.tsx` - Enhanced tooltip component with:
+   - `EnhancedChartTooltip` base component (styled container, title row, metric rows, footer, animation, dark theme)
+   - `EngineBadge` sub-component (VLLM emerald, SGLang amber)
+   - 7 convenience tooltip components for different chart types
+   - `useChartHighlight` hook for click-to-highlight behavior
+   - `HighlightCard` persistent floating card component
 
-### Data Source Migration
-- **Before**: Mock data (MOCK_MODELS, MOCK_PROFILES, MOCK_TASKS, MOCK_RESULTS) initialized via Zustand store
-- **After**: Real API data via `useBenchmarks()`, `useResults()`, `useModels()`, `useProfiles()` hooks
+## Files Modified
+1. `src/components/dashboard/dashboard-page.tsx` - Replaced tooltip components, added click-to-highlight on Performance Overview and Latency Distribution charts
+2. `src/components/reports/reports-page.tsx` - Replaced all 4 chart tooltips, added click-to-highlight, fixed pre-existing parsing bug
+3. `src/components/analysis/analysis-page.tsx` - Replaced inline AnalysisTooltip, added click-to-highlight on single-model and multi-model charts
 
-### API Operations
-- **Create benchmark**: `addBenchmark()` API → `editBenchmark()` to set status='running' → client-side simulation → `editBenchmark()` to set completed + `addResult()` to save result
-- **Delete benchmark**: `removeBenchmark()` API
-- **Duplicate benchmark**: `addBenchmark()` API with copied task data
-- **Stop benchmark**: `editBenchmark()` to set status='failed'
+## Key Features
+- Framer-motion fade-in animation on tooltip appear
+- Dark theme support with proper colors
+- Engine type badges (VLLM/SGLang) in tooltips
+- Comparison indicators (↑/↓ %) from previous data point
+- Visual bar indicators for proportional values
+- Click-to-highlight with persistent HighlightCard and close button
+- Responsive compact mode for mobile
+- Dimension-aware unit formatting
 
-### Type Mapping
-- API returns benchmarks with nested `model`, `profile`, `results` objects
-- Created `BenchmarkWithRelations` interface and `mapBenchmarkTask()` function to flatten to `BenchmarkTaskInfo`
-
-### Simulation Mechanism
-- Running benchmark simulation stays client-side (no real inference engine)
-- Uses local `runningProgress` state instead of updating server every 200ms
-- Uses `throughputHistoryRef` (useRef) to avoid stale closure issues in setInterval
-- On completion: persists result and status via API calls
-
-### UI Enhancements
-- Loading skeleton (`TableSkeleton`) shown during data fetching
-- Toast notifications (sonner) for all async operation success/error
-- JSON.parse safety with try/catch for detailJson
-
-## Lint Result
-- 0 errors, 1 pre-existing warning in use-api.ts (not in benchmark code)
+## Quality
+- ESLint: zero errors
+- Dev server: compiles and serves successfully
+- All existing chart functionality preserved

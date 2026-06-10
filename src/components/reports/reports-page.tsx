@@ -33,9 +33,12 @@ import { toast } from 'sonner'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
+import { Tooltip as UITooltip, TooltipTrigger as UITooltipTrigger, TooltipContent as UITooltipContent } from '@/components/ui/tooltip'
 import { useResults, useBenchmarks, useModels } from '@/hooks/use-api'
 import type { EngineType, BenchmarkScenario, BenchmarkResultInfo, BenchmarkTaskInfo } from '@/lib/types'
 import { CustomChartTooltip, type TooltipEntry } from '@/components/ui/custom-chart-tooltip'
+import { EnhancedReportsThroughputTooltip, EnhancedScatterTooltip, EnhancedReportsLatencyTooltip, EnhancedReportsTtftTpotTooltip, useChartHighlight, HighlightCard } from '@/components/ui/enhanced-chart-tooltip'
+import { calculateScore, getGradeStyle, type ScoreBreakdown } from '@/lib/performance-score'
 
 // ─── Color Constants ─────────────────────────────────────────────
 const VLLM_COLOR = '#10b981'   // emerald-500
@@ -191,6 +194,12 @@ export default function ReportsPage() {
   const [compareOpen, setCompareOpen] = useState(false)
   const [compareA, setCompareA] = useState<string>('')
   const [compareB, setCompareB] = useState<string>('')
+
+  // Click-to-highlight state for charts
+  const throughputHighlight = useChartHighlight()
+  const latencyHighlight = useChartHighlight()
+  const scatterHighlight = useChartHighlight()
+  const ttftHighlight = useChartHighlight()
 
   // ─── API Data ────────────────────────────────────────────────
   const { data: resultsRaw, loading: resultsLoading, error: resultsError } = useResults()
@@ -396,6 +405,32 @@ export default function ReportsPage() {
     const s = filtered.filter((r) => r.engine === 'sglang')
     return s.length ? s.reduce((s, r) => s + r.latencyP99Ms, 0) / s.length : 0
   }, [filtered])
+
+  // ─── Grade Calculations ────────────────────────────────────────
+  const gradeBreakdowns = useMemo(() => {
+    const map = new Map<string, ScoreBreakdown>()
+    for (const r of reportResults) {
+      map.set(r.id, calculateScore({
+        throughput: r.throughputTokensPerSec,
+        latencyP99: r.latencyP99Ms,
+        ttft: r.ttftMs,
+        tpot: r.tpotMs,
+        errorRate: r.errorRate,
+      }))
+    }
+    return map
+  }, [reportResults])
+
+  const gradeDistribution = useMemo(() => {
+    const dist = { 'A+': 0, 'A': 0, 'B': 0, 'C': 0, 'D': 0, 'F': 0 } as Record<string, number>
+    for (const r of filtered) {
+      const breakdown = gradeBreakdowns.get(r.id)
+      if (breakdown) {
+        dist[breakdown.overall.grade] = (dist[breakdown.overall.grade] || 0) + 1
+      }
+    }
+    return dist
+  }, [filtered, gradeBreakdowns])
 
   // ─── Sort Handler ─────────────────────────────────────────────
   const handleSort = (col: string) => {
@@ -844,6 +879,46 @@ export default function ReportsPage() {
         </Card>
       </div>
 
+      {/* ─── Grade Distribution Card ───────────────────────────── */}
+      {reportResults.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Trophy className="w-5 h-5 text-amber-500" />
+              Grade Distribution
+            </CardTitle>
+            <CardDescription>Performance grade breakdown across {filtered.length} filtered results</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-end gap-3">
+              {(['A+', 'A', 'B', 'C', 'D', 'F'] as const).map((grade) => {
+                const count = gradeDistribution[grade] || 0
+                const pct = filtered.length > 0 ? (count / filtered.length) * 100 : 0
+                const style = getGradeStyle(grade)
+                return (
+                  <div key={grade} className="flex-1 flex flex-col items-center gap-1.5">
+                    <span className="text-xs font-medium text-muted-foreground tabular-nums">{count}</span>
+                    <div className="w-full h-24 bg-muted/40 rounded-md relative overflow-hidden flex items-end">
+                      <div
+                        className={`w-full rounded-md transition-all duration-500 ${style.bgColor} ${style.color} flex items-center justify-center font-bold text-sm`}
+                        style={{ height: `${Math.max(pct > 0 ? 12 : 0, pct)}%` }}
+                      >
+                        {pct > 15 && grade}
+                      </div>
+                    </div>
+                    <span className={`text-sm font-bold ${style.color}`}>{grade}</span>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="flex items-center justify-between mt-3 text-xs text-muted-foreground">
+              <span>Weighted: Throughput 30% · Latency 25% · TTFT 20% · TPOT 15% · Reliability 10%</span>
+              <span>{filtered.length} results</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* ─── Empty State ─────────────────────────────────────── */}
       {reportResults.length === 0 && !isLoading && (
         <Card>
@@ -876,13 +951,13 @@ export default function ReportsPage() {
               </CardHeader>
               <CardContent>
                 {throughputComparisonData.length > 0 ? (
-                  <div className="h-[400px]">
+                  <div className="relative h-[400px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={throughputComparisonData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                      <BarChart data={throughputComparisonData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }} onClick={(state) => throughputHighlight.handleChartClick(state as unknown as Parameters<typeof throughputHighlight.handleChartClick>[0])}>
                         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                         <XAxis dataKey="model" tick={{ fontSize: 12 }} />
                         <YAxis tick={{ fontSize: 12 }} label={{ value: 'Tokens/s', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }} />
-                        <Tooltip content={<ThroughputTooltip />} />
+                        <Tooltip content={<EnhancedReportsThroughputTooltip />} />
                         <Legend
                           formatter={(value: string) => (value === 'vllm' ? 'VLLM' : 'SGLang')}
                           wrapperStyle={{ fontSize: 12 }}
@@ -891,6 +966,16 @@ export default function ReportsPage() {
                         <Bar dataKey="sglang" fill={SGLANG_COLOR} radius={[4, 4, 0, 0]} barSize={28} />
                       </BarChart>
                     </ResponsiveContainer>
+                    {throughputHighlight.highlighted && (
+                      <HighlightCard
+                        point={throughputHighlight.highlighted}
+                        seriesConfig={{
+                          vllm: { label: 'VLLM', color: VLLM_COLOR, unit: 'tokens/s' },
+                          sglang: { label: 'SGLang', color: SGLANG_COLOR, unit: 'tokens/s' },
+                        }}
+                        onClose={throughputHighlight.clearHighlight}
+                      />
+                    )}
                   </div>
                 ) : (
                   <div className="h-[400px] flex items-center justify-center text-muted-foreground text-sm">
@@ -910,21 +995,14 @@ export default function ReportsPage() {
               </CardHeader>
               <CardContent>
                 {latencyData.length > 0 ? (
-                  <div className="h-[400px]">
+                  <div className="relative h-[400px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={latencyData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                      <ComposedChart data={latencyData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }} onClick={(state) => latencyHighlight.handleChartClick(state as unknown as Parameters<typeof latencyHighlight.handleChartClick>[0])}>
                         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                         <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={60} />
                         <YAxis tick={{ fontSize: 12 }} label={{ value: 'Latency (ms)', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }} />
                         <Tooltip
-                          content={<CustomChartTooltip
-                            seriesConfig={{
-                              p50: { label: 'P50', color: '#94a3b8', unit: 'ms' },
-                              p90: { label: 'P90', color: '#f59e0b', unit: 'ms' },
-                              p99: { label: 'P99', color: '#ef4444', unit: 'ms' },
-                            }}
-                            showClickHint
-                          />}
+                          content={<EnhancedReportsLatencyTooltip />}
                         />
                         <Legend wrapperStyle={{ fontSize: 12 }} />
                         <Bar dataKey="p50" name="P50" fill="#94a3b8" radius={[2, 2, 0, 0]} barSize={10} />
@@ -932,6 +1010,17 @@ export default function ReportsPage() {
                         <Bar dataKey="p99" name="P99" fill="#ef4444" radius={[2, 2, 0, 0]} barSize={10} />
                       </ComposedChart>
                     </ResponsiveContainer>
+                    {latencyHighlight.highlighted && (
+                      <HighlightCard
+                        point={latencyHighlight.highlighted}
+                        seriesConfig={{
+                          p50: { label: 'P50', color: '#94a3b8', unit: 'ms' },
+                          p90: { label: 'P90', color: '#f59e0b', unit: 'ms' },
+                          p99: { label: 'P99', color: '#ef4444', unit: 'ms' },
+                        }}
+                        onClose={latencyHighlight.clearHighlight}
+                      />
+                    )}
                   </div>
                 ) : (
                   <div className="h-[400px] flex items-center justify-center text-muted-foreground text-sm">
@@ -951,9 +1040,9 @@ export default function ReportsPage() {
               </CardHeader>
               <CardContent>
                 {scatterData.length > 0 ? (
-                  <div className="h-[400px]">
+                  <div className="relative h-[400px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <ScatterChart margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                      <ScatterChart margin={{ top: 5, right: 30, left: 20, bottom: 5 }} onClick={(state) => scatterHighlight.handleChartClick(state as unknown as Parameters<typeof scatterHighlight.handleChartClick>[0])}>
                         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                         <XAxis
                           type="number"
@@ -969,7 +1058,7 @@ export default function ReportsPage() {
                           tick={{ fontSize: 12 }}
                           label={{ value: 'Latency P99 (ms)', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
                         />
-                        <Tooltip content={<ScatterTooltip />} />
+                        <Tooltip content={<EnhancedScatterTooltip />} />
                         <Legend
                           formatter={(value: string) => (value === 'vllm' ? 'VLLM' : 'SGLang')}
                           wrapperStyle={{ fontSize: 12 }}
@@ -986,6 +1075,16 @@ export default function ReportsPage() {
                         </Scatter>
                       </ScatterChart>
                     </ResponsiveContainer>
+                    {scatterHighlight.highlighted && (
+                      <HighlightCard
+                        point={scatterHighlight.highlighted}
+                        seriesConfig={{
+                          x: { label: 'Throughput', color: VLLM_COLOR, unit: 'tok/s' },
+                          y: { label: 'Latency P99', color: '#ef4444', unit: 'ms' },
+                        }}
+                        onClose={scatterHighlight.clearHighlight}
+                      />
+                    )}
                   </div>
                 ) : (
                   <div className="h-[400px] flex items-center justify-center text-muted-foreground text-sm">
@@ -1005,21 +1104,13 @@ export default function ReportsPage() {
               </CardHeader>
               <CardContent>
                 {ttftTpotData.length > 0 ? (
-                  <div className="h-[400px]">
+                  <div className="relative h-[400px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={ttftTpotData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                      <BarChart data={ttftTpotData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }} onClick={(state) => ttftHighlight.handleChartClick(state as unknown as Parameters<typeof ttftHighlight.handleChartClick>[0])}>
                         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                         <XAxis dataKey="model" tick={{ fontSize: 12 }} />
                         <YAxis tick={{ fontSize: 12 }} label={{ value: 'Time (ms)', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }} />
-                        <Tooltip content={<CustomChartTooltip
-                          seriesConfig={{
-                            'VLLM TTFT': { label: 'VLLM TTFT', color: VLLM_COLOR, unit: 'ms' },
-                            'SGLang TTFT': { label: 'SGLang TTFT', color: SGLANG_COLOR, unit: 'ms' },
-                            'VLLM TPOT': { label: 'VLLM TPOT', color: '#6ee7b7', unit: 'ms' },
-                            'SGLang TPOT': { label: 'SGLang TPOT', color: '#fcd34d', unit: 'ms' },
-                          }}
-                          showClickHint
-                        />} />
+                        <Tooltip content={<EnhancedReportsTtftTpotTooltip />} />
                         <Legend wrapperStyle={{ fontSize: 12 }} />
                         <Bar dataKey="VLLM TTFT" fill={VLLM_COLOR} radius={[3, 3, 0, 0]} barSize={14} />
                         <Bar dataKey="SGLang TTFT" fill={SGLANG_COLOR} radius={[3, 3, 0, 0]} barSize={14} />
@@ -1027,6 +1118,18 @@ export default function ReportsPage() {
                         <Bar dataKey="SGLang TPOT" fill="#fcd34d" radius={[3, 3, 0, 0]} barSize={14} />
                       </BarChart>
                     </ResponsiveContainer>
+                    {ttftHighlight.highlighted && (
+                      <HighlightCard
+                        point={ttftHighlight.highlighted}
+                        seriesConfig={{
+                          'VLLM TTFT': { label: 'VLLM TTFT', color: VLLM_COLOR, unit: 'ms' },
+                          'SGLang TTFT': { label: 'SGLang TTFT', color: SGLANG_COLOR, unit: 'ms' },
+                          'VLLM TPOT': { label: 'VLLM TPOT', color: '#6ee7b7', unit: 'ms' },
+                          'SGLang TPOT': { label: 'SGLang TPOT', color: '#fcd34d', unit: 'ms' },
+                        }}
+                        onClose={ttftHighlight.clearHighlight}
+                      />
+                    )}
                   </div>
                 ) : (
                   <div className="h-[400px] flex items-center justify-center text-muted-foreground text-sm">
@@ -1113,6 +1216,7 @@ export default function ReportsPage() {
                     </TableHead>
                     <TableHead>Engine</TableHead>
                     <TableHead>Scenario</TableHead>
+                    <TableHead>Grade</TableHead>
                     <TableHead className="cursor-pointer select-none" onClick={() => handleSort('throughputTokensPerSec')}>
                       <span className="flex items-center gap-1">Throughput (tok/s) {renderSortIcon('throughputTokensPerSec')}</span>
                     </TableHead>
@@ -1144,6 +1248,45 @@ export default function ReportsPage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-sm capitalize">{r.scenario.replace('_', ' ')}</TableCell>
+                        <TableCell>
+                          {(() => {
+                            const breakdown = gradeBreakdowns.get(r.id)
+                            if (!breakdown) return <span className="text-muted-foreground">—</span>
+                            const { overall, throughput, latency, ttft, tpot, reliability } = breakdown
+                            const style = getGradeStyle(overall.grade)
+                            return (
+                              <UITooltip>
+                                <UITooltipTrigger asChild>
+                                  <Badge className={`cursor-default text-xs font-bold border-0 ${style.bgColor} ${style.color}`}>
+                                    {overall.grade}
+                                  </Badge>
+                                </UITooltipTrigger>
+                                <UITooltipContent side="top" className="bg-popover text-popover-foreground border shadow-lg p-3 max-w-xs">
+                                  <p className="font-semibold mb-2">Performance Breakdown</p>
+                                  <div className="space-y-1.5">
+                                    {[
+                                      { label: 'Throughput', grade: throughput.grade, detail: `${r.throughputTokensPerSec.toLocaleString()} tok/s` },
+                                      { label: 'Latency P99', grade: latency.grade, detail: `${r.latencyP99Ms} ms` },
+                                      { label: 'TTFT', grade: ttft.grade, detail: `${r.ttftMs} ms` },
+                                      { label: 'TPOT', grade: tpot.grade, detail: `${r.tpotMs} ms` },
+                                      { label: 'Reliability', grade: reliability.grade, detail: `${r.errorRate}% error` },
+                                    ].map((item) => {
+                                      const s = getGradeStyle(item.grade)
+                                      return (
+                                        <div key={item.label} className="flex items-center justify-between gap-3">
+                                          <span className="text-xs text-muted-foreground">{item.label}</span>
+                                          <span className="text-xs text-muted-foreground">{item.detail}</span>
+                                          <span className={`text-xs font-bold ${s.color}`}>{item.grade}</span>
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                  <p className="text-[10px] text-muted-foreground mt-2">Overall: {overall.label} ({overall.score}/100)</p>
+                                </UITooltipContent>
+                              </UITooltip>
+                            )
+                          })()}
+                        </TableCell>
                         <TableCell className={`font-mono text-sm font-medium ${getPerformanceColor(r.throughputTokensPerSec, 'throughput')}`}>
                           {r.throughputTokensPerSec.toLocaleString()}
                         </TableCell>
@@ -1158,7 +1301,7 @@ export default function ReportsPage() {
                       </TableRow>
                       {expandedRow === r.id && (
                         <TableRow className="bg-muted/30">
-                          <TableCell colSpan={8} className="p-4">
+                          <TableCell colSpan={9} className="p-4">
                             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 text-sm">
                               <div><span className="text-muted-foreground">Throughput (req/s):</span><br /><span className="font-mono font-medium">{r.throughputRequestsPerSec}</span></div>
                               <div><span className="text-muted-foreground">Latency Mean:</span><br /><span className="font-mono font-medium">{r.latencyMeanMs} ms</span></div>
