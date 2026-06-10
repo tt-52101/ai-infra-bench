@@ -7,7 +7,8 @@ import {
   Cpu, HardDrive, ArrowUpRight, Loader2, CheckCircle2, XCircle,
   Timer, ArrowUpDown, ArrowUp, ArrowDown, Filter, Plus,
   Server, Settings, Cloud, ChevronRight, AlertTriangle,
-  Gauge, TrendingUp, BarChart3, Wifi, WifiOff, Radio
+  Gauge, TrendingUp, BarChart3, Wifi, WifiOff, Radio,
+  GitCompareArrows, X, Trophy, Minus, Scale
 } from 'lucide-react'
 import {
   Card, CardContent, CardDescription, CardFooter,
@@ -42,6 +43,7 @@ import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   ChartContainer, ChartTooltip, ChartTooltipContent
 } from '@/components/ui/chart'
@@ -367,6 +369,10 @@ export default function BenchmarkPage() {
   const [sortField, setSortField] = useState<string>('createdAt')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all')
+
+  // Compare mode state
+  const [compareIds, setCompareIds] = useState<string[]>([])
+  const [compareDialogOpen, setCompareDialogOpen] = useState(false)
 
   // ─── WebSocket Event Handlers ────────────────────────────
   useEffect(() => {
@@ -787,6 +793,27 @@ export default function BenchmarkPage() {
     return (results ?? []).find(r => r.taskId === taskId)
   }, [results])
 
+  // ─── Compare Toggle Handler ────────────────────────────────
+  const handleCompareToggle = useCallback((taskId: string) => {
+    setCompareIds(prev => {
+      if (prev.includes(taskId)) {
+        return prev.filter(id => id !== taskId)
+      }
+      if (prev.length >= 2) return prev
+      return [...prev, taskId]
+    })
+  }, [])
+
+  const handleCompareClear = useCallback(() => {
+    setCompareIds([])
+  }, [])
+
+  const handleCompareNow = useCallback(() => {
+    if (compareIds.length === 2) {
+      setCompareDialogOpen(true)
+    }
+  }, [compareIds])
+
   // ─── Sort Icon ──────────────────────────────────────────────
   function SortIcon({ field }: { field: string }) {
     if (sortField !== field) return <ArrowUpDown className="size-3 opacity-40" />
@@ -1036,6 +1063,7 @@ export default function BenchmarkPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="w-10 text-center">Compare</TableHead>
                         <TableHead
                           className="cursor-pointer select-none"
                           onClick={() => handleSort('name')}
@@ -1070,7 +1098,7 @@ export default function BenchmarkPage() {
                     <TableBody>
                       {filteredAndSortedTasks.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={9} className="h-24 text-center">
+                          <TableCell colSpan={10} className="h-24 text-center">
                             <div className="text-muted-foreground flex flex-col items-center gap-2">
                               <BarChart3 className="size-8 opacity-40" />
                               <p className="text-sm">No benchmark tasks found</p>
@@ -1081,8 +1109,20 @@ export default function BenchmarkPage() {
                       ) : (
                         filteredAndSortedTasks.map(task => {
                           const result = getResultForTask(task.id)
+                          const isCompared = compareIds.includes(task.id)
                           return (
-                            <TableRow key={task.id} className="group">
+                            <TableRow
+                              key={task.id}
+                              className={`group ${isCompared ? 'border-l-2 border-l-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20' : ''}`}
+                            >
+                              <TableCell className="text-center">
+                                <Checkbox
+                                  checked={isCompared}
+                                  onCheckedChange={() => handleCompareToggle(task.id)}
+                                  disabled={!isCompared && compareIds.length >= 2}
+                                  className={isCompared ? 'border-emerald-500 data-[state=checked]:bg-emerald-500 data-[state=checked]:border-emerald-500' : ''}
+                                />
+                              </TableCell>
                               <TableCell>
                                 <div className="flex flex-col">
                                   <span className="font-medium">{task.name}</span>
@@ -1693,6 +1733,316 @@ export default function BenchmarkPage() {
               </Tabs>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Floating Comparison Bar ─────────────────────────── */}
+      <AnimatePresence>
+        {compareIds.length > 0 && (
+          <motion.div
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            className="fixed bottom-4 left-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2"
+          >
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur-sm dark:border-emerald-800 dark:bg-gray-900/95">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-900/40">
+                  <GitCompareArrows className="size-4 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">
+                    {compareIds.length}/2 selected
+                  </p>
+                  <div className="flex items-center gap-1.5 mt-0.5 overflow-x-auto">
+                    {compareIds.map(id => {
+                      const t = tasks.find(tk => tk.id === id)
+                      return t ? (
+                        <Badge
+                          key={id}
+                          variant="secondary"
+                          className="shrink-0 gap-1 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800 text-xs"
+                        >
+                          {t.name}
+                          <button
+                            onClick={() => handleCompareToggle(id)}
+                            className="ml-0.5 rounded-full p-0.5 hover:bg-emerald-200 dark:hover:bg-emerald-800"
+                          >
+                            <X className="size-2.5" />
+                          </button>
+                        </Badge>
+                      ) : null
+                    })}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCompareClear}
+                  className="text-xs"
+                >
+                  Clear
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleCompareNow}
+                  disabled={compareIds.length < 2}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                >
+                  <Scale className="size-3.5" />
+                  Compare Now
+                </Button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Benchmark Comparison Dialog ────────────────────── */}
+      <Dialog open={compareDialogOpen} onOpenChange={setCompareDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          {compareIds.length === 2 && (() => {
+            const taskA = tasks.find(t => t.id === compareIds[0])
+            const taskB = tasks.find(t => t.id === compareIds[1])
+            const resultA = taskA ? getResultForTask(taskA.id) : null
+            const resultB = taskB ? getResultForTask(taskB.id) : null
+
+            if (!taskA || !taskB || !resultA || !resultB) {
+              return (
+                <>
+                  <DialogHeader>
+                    <DialogTitle>Benchmark Comparison</DialogTitle>
+                    <DialogDescription>
+                      One or both benchmarks do not have results yet. Only completed benchmarks with results can be compared.
+                    </DialogDescription>
+                  </DialogHeader>
+                </>
+              )
+            }
+
+            // Comparison metrics
+            type MetricCompare = {
+              label: string
+              unit: string
+              valueA: number
+              valueB: number
+              lowerIsBetter: boolean
+              format?: (v: number) => string
+            }
+
+            const metrics: MetricCompare[] = [
+              { label: 'Throughput (tokens/s)', unit: 'tok/s', valueA: resultA.throughputTokensPerSec, valueB: resultB.throughputTokensPerSec, lowerIsBetter: false },
+              { label: 'Throughput (req/s)', unit: 'req/s', valueA: resultA.throughputRequestsPerSec, valueB: resultB.throughputRequestsPerSec, lowerIsBetter: false },
+              { label: 'Latency Mean', unit: 'ms', valueA: resultA.latencyMeanMs, valueB: resultB.latencyMeanMs, lowerIsBetter: true },
+              { label: 'Latency P50', unit: 'ms', valueA: resultA.latencyP50Ms, valueB: resultB.latencyP50Ms, lowerIsBetter: true },
+              { label: 'Latency P90', unit: 'ms', valueA: resultA.latencyP90Ms, valueB: resultB.latencyP90Ms, lowerIsBetter: true },
+              { label: 'Latency P99', unit: 'ms', valueA: resultA.latencyP99Ms, valueB: resultB.latencyP99Ms, lowerIsBetter: true },
+              { label: 'TTFT', unit: 'ms', valueA: resultA.timeToFirstTokenMs, valueB: resultB.timeToFirstTokenMs, lowerIsBetter: true },
+              { label: 'TPOT', unit: 'ms', valueA: resultA.timePerOutputTokenMs, valueB: resultB.timePerOutputTokenMs, lowerIsBetter: true },
+              { label: 'GPU Memory Used', unit: 'GB', valueA: resultA.gpuMemoryUsedGb, valueB: resultB.gpuMemoryUsedGb, lowerIsBetter: true },
+              { label: 'GPU Utilization', unit: '%', valueA: resultA.gpuUtilization * 100, valueB: resultB.gpuUtilization * 100, lowerIsBetter: false, format: (v) => `${v.toFixed(0)}%` },
+              { label: 'CPU Utilization', unit: '%', valueA: resultA.cpuUtilization * 100, valueB: resultB.cpuUtilization * 100, lowerIsBetter: false, format: (v) => `${v.toFixed(0)}%` },
+              { label: 'Error Rate', unit: '%', valueA: resultA.errorRate * 100, valueB: resultB.errorRate * 100, lowerIsBetter: true, format: (v) => `${v.toFixed(2)}%` },
+              { label: 'Total Requests', unit: '', valueA: resultA.totalRequests, valueB: resultB.totalRequests, lowerIsBetter: false, format: (v) => `${Math.round(v)}` },
+              { label: 'Success Requests', unit: '', valueA: resultA.successRequests, valueB: resultB.successRequests, lowerIsBetter: false, format: (v) => `${Math.round(v)}` },
+              { label: 'Failed Requests', unit: '', valueA: resultA.failedRequests, valueB: resultB.failedRequests, lowerIsBetter: true, format: (v) => `${Math.round(v)}` },
+            ]
+
+            function getWinnerSide(m: MetricCompare): 'A' | 'B' | 'tie' {
+              const diff = m.valueA - m.valueB
+              if (Math.abs(diff) < 0.001) return 'tie'
+              if (m.lowerIsBetter) return diff < 0 ? 'A' : 'B'
+              return diff > 0 ? 'A' : 'B'
+            }
+
+            function getDelta(m: MetricCompare): string {
+              if (m.valueA === 0 && m.valueB === 0) return '0%'
+              const base = m.valueB || 1
+              const pct = ((m.valueA - m.valueB) / base * 100)
+              const sign = pct > 0 ? '+' : ''
+              return `${sign}${pct.toFixed(1)}%`
+            }
+
+            function formatMetricValue(m: MetricCompare, v: number): string {
+              if (m.format) return m.format(v)
+              if (v >= 1000) return `${(v / 1000).toFixed(1)}k`
+              return v.toFixed(v % 1 === 0 ? 0 : 1)
+            }
+
+            // Bar chart data
+            const barComparisons = [
+              { label: 'Throughput (tok/s)', valueA: resultA.throughputTokensPerSec, valueB: resultB.throughputTokensPerSec, lowerIsBetter: false },
+              { label: 'Latency P99 (ms)', valueA: resultA.latencyP99Ms, valueB: resultB.latencyP99Ms, lowerIsBetter: true },
+              { label: 'TTFT (ms)', valueA: resultA.timeToFirstTokenMs, valueB: resultB.timeToFirstTokenMs, lowerIsBetter: true },
+            ]
+
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <Scale className="size-5 text-emerald-600" />
+                    Benchmark Comparison
+                  </DialogTitle>
+                  <DialogDescription>
+                    Side-by-side comparison of two benchmark results
+                  </DialogDescription>
+                </DialogHeader>
+
+                {/* Header Section - Two columns with benchmark info */}
+                <div className="grid grid-cols-2 gap-4 mt-2">
+                  {[taskA, taskB].map((task, idx) => (
+                    <Card key={task.id} className={`py-3 ${idx === 0 ? 'border-l-4 border-l-emerald-500' : 'border-l-4 border-l-amber-500'}`}>
+                      <CardContent className="p-3 space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <div className={`size-3 rounded-full shrink-0 ${idx === 0 ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                          <p className="font-semibold text-sm truncate">{task.name}</p>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <Server className="size-3" />
+                          {task.modelName}
+                          <Badge variant="secondary" className="text-[10px] px-1 py-0 ml-1">
+                            {task.engine?.toUpperCase()}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <Activity className="size-3" />
+                          {getScenarioLabel(task.scenario)}
+                        </div>
+                        <StatusBadge status={task.status} />
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+
+                <Separator className="my-2" />
+
+                {/* Performance Comparison Table */}
+                <div>
+                  <h4 className="mb-2 text-sm font-semibold flex items-center gap-1.5">
+                    <Trophy className="size-4 text-emerald-600" />
+                    Performance Comparison
+                  </h4>
+                  <div className="overflow-x-auto rounded-lg border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[180px]">Metric</TableHead>
+                          <TableHead className="text-center">
+                            <span className="flex items-center justify-center gap-1.5">
+                              <span className="size-2.5 rounded-full bg-emerald-500" />
+                              {taskA.name.length > 20 ? taskA.name.slice(0, 20) + '...' : taskA.name}
+                            </span>
+                          </TableHead>
+                          <TableHead className="text-center">
+                            <span className="flex items-center justify-center gap-1.5">
+                              <span className="size-2.5 rounded-full bg-amber-500" />
+                              {taskB.name.length > 20 ? taskB.name.slice(0, 20) + '...' : taskB.name}
+                            </span>
+                          </TableHead>
+                          <TableHead className="text-center w-[100px]">Delta</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {metrics.map(m => {
+                          const winner = getWinnerSide(m)
+                          return (
+                            <TableRow key={m.label}>
+                              <TableCell className="font-medium text-xs">{m.label}</TableCell>
+                              <TableCell className={`text-center text-xs font-mono ${winner === 'A' ? 'bg-emerald-50 dark:bg-emerald-950/30 font-bold' : ''}`}>
+                                <span className="flex items-center justify-center gap-1">
+                                  {winner === 'A' && <ArrowUp className="size-3 text-emerald-600" />}
+                                  {winner === 'B' && <ArrowDown className="size-3 text-red-400" />}
+                                  {winner === 'tie' && <Minus className="size-3 text-muted-foreground" />}
+                                  {formatMetricValue(m, m.valueA)} {m.unit && !m.format && <span className="text-muted-foreground text-[10px]">{m.unit}</span>}
+                                </span>
+                              </TableCell>
+                              <TableCell className={`text-center text-xs font-mono ${winner === 'B' ? 'bg-emerald-50 dark:bg-emerald-950/30 font-bold' : ''}`}>
+                                <span className="flex items-center justify-center gap-1">
+                                  {winner === 'B' && <ArrowUp className="size-3 text-emerald-600" />}
+                                  {winner === 'A' && <ArrowDown className="size-3 text-red-400" />}
+                                  {winner === 'tie' && <Minus className="size-3 text-muted-foreground" />}
+                                  {formatMetricValue(m, m.valueB)} {m.unit && !m.format && <span className="text-muted-foreground text-[10px]">{m.unit}</span>}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-center text-xs font-mono">
+                                <span className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 ${
+                                  winner === 'A' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' :
+                                  winner === 'B' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' :
+                                  'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                                }`}>
+                                  {getDelta(m)}
+                                </span>
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+
+                <Separator className="my-2" />
+
+                {/* Visual Bar Chart Comparison */}
+                <div>
+                  <h4 className="mb-2 text-sm font-semibold flex items-center gap-1.5">
+                    <BarChart3 className="size-4 text-emerald-600" />
+                    Visual Comparison
+                  </h4>
+                  <div className="space-y-4">
+                    {barComparisons.map(bc => {
+                      const maxVal = Math.max(bc.valueA, bc.valueB, 1)
+                      const winnerA = bc.lowerIsBetter ? bc.valueA < bc.valueB : bc.valueA > bc.valueB
+                      const winnerB = bc.lowerIsBetter ? bc.valueB < bc.valueA : bc.valueB > bc.valueA
+                      return (
+                        <div key={bc.label} className="space-y-1.5">
+                          <p className="text-xs font-medium text-muted-foreground">{bc.label}</p>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="w-8 shrink-0 text-[10px] text-emerald-600 font-bold">A</span>
+                              <div className="flex-1 h-6 rounded-md bg-muted/50 overflow-hidden relative">
+                                <div
+                                  className={`h-full rounded-md transition-all ${winnerA ? 'bg-emerald-500' : 'bg-emerald-300 dark:bg-emerald-700'}`}
+                                  style={{ width: `${Math.max((bc.valueA / maxVal) * 100, 2)}%` }}
+                                />
+                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-mono font-bold">
+                                  {bc.valueA >= 1000 ? `${(bc.valueA / 1000).toFixed(1)}k` : bc.valueA.toFixed(bc.valueA % 1 === 0 ? 0 : 1)}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="w-8 shrink-0 text-[10px] text-amber-600 font-bold">B</span>
+                              <div className="flex-1 h-6 rounded-md bg-muted/50 overflow-hidden relative">
+                                <div
+                                  className={`h-full rounded-md transition-all ${winnerB ? 'bg-amber-500' : 'bg-amber-300 dark:bg-amber-700'}`}
+                                  style={{ width: `${Math.max((bc.valueB / maxVal) * 100, 2)}%` }}
+                                />
+                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-mono font-bold">
+                                  {bc.valueB >= 1000 ? `${(bc.valueB / 1000).toFixed(1)}k` : bc.valueB.toFixed(bc.valueB % 1 === 0 ? 0 : 1)}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Legend */}
+                <div className="flex items-center justify-center gap-4 pt-2 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1"><ArrowUp className="size-3 text-emerald-600" /> Better</span>
+                  <span className="flex items-center gap-1"><ArrowDown className="size-3 text-red-400" /> Worse</span>
+                  <span className="flex items-center gap-1"><Minus className="size-3" /> Equal</span>
+                  <span className="flex items-center gap-1"><span className="size-2.5 rounded-full bg-emerald-500" /> Result A</span>
+                  <span className="flex items-center gap-1"><span className="size-2.5 rounded-full bg-amber-500" /> Result B</span>
+                </div>
+              </>
+            )
+          })()}
         </DialogContent>
       </Dialog>
     </div>

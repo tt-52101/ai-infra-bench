@@ -1,8 +1,8 @@
 'use client'
 
-import { useMemo } from 'react'
-import { Box, Play, Zap, Clock, ArrowRight, Plus, SlidersHorizontal, TrendingUp, Server, HardDrive, Wifi, CheckCircle2, Info, XCircle, Award, ArrowUpRight, ArrowDownRight } from 'lucide-react'
-import { motion } from 'framer-motion'
+import { useMemo, useState, useEffect, useRef, useCallback } from 'react'
+import { Box, Play, Zap, Clock, ArrowRight, Plus, SlidersHorizontal, Server, HardDrive, Wifi, XCircle, Award, ArrowUpRight, ArrowDownRight, Thermometer, Cpu, Check, BarChart3, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -151,6 +151,395 @@ function formatScenario(scenario: string): string {
 
 function getResultEngine(r: BenchmarkResultInfo): string {
   return (r as ResultWithTask).task?.model?.engine ?? 'vllm'
+}
+
+// ── Activity Timeline types & data ────────────────────────────────────────
+
+type ActivityType =
+  | 'benchmark_started'
+  | 'benchmark_completed'
+  | 'benchmark_failed'
+  | 'model_added'
+  | 'model_deployed'
+  | 'profile_created'
+  | 'analysis_ready'
+  | 'system_alert'
+
+interface TimelineActivity {
+  id: string
+  type: ActivityType
+  title: string
+  description: string
+  timestamp: Date
+  relatedModel?: string
+  relatedEngine?: 'vllm' | 'sglang'
+  isNew?: boolean
+}
+
+const ACTIVITY_TYPE_CONFIG: Record<ActivityType, {
+  icon: typeof Check
+  color: string
+  bgColor: string
+  borderColor: string
+  dotColor: string
+  label: string
+  category: 'benchmark' | 'model' | 'analysis' | 'alert'
+}> = {
+  benchmark_completed: {
+    icon: Check,
+    color: 'text-emerald-600 dark:text-emerald-400',
+    bgColor: 'bg-emerald-100 dark:bg-emerald-900/40',
+    borderColor: 'border-l-emerald-500',
+    dotColor: 'bg-emerald-500',
+    label: 'Completed',
+    category: 'benchmark',
+  },
+  benchmark_started: {
+    icon: Play,
+    color: 'text-amber-600 dark:text-amber-400',
+    bgColor: 'bg-amber-100 dark:bg-amber-900/40',
+    borderColor: 'border-l-amber-500',
+    dotColor: 'bg-amber-500',
+    label: 'Started',
+    category: 'benchmark',
+  },
+  benchmark_failed: {
+    icon: XCircle,
+    color: 'text-red-600 dark:text-red-400',
+    bgColor: 'bg-red-100 dark:bg-red-900/40',
+    borderColor: 'border-l-red-500',
+    dotColor: 'bg-red-500',
+    label: 'Failed',
+    category: 'benchmark',
+  },
+  model_added: {
+    icon: Box,
+    color: 'text-sky-600 dark:text-sky-400',
+    bgColor: 'bg-sky-100 dark:bg-sky-900/40',
+    borderColor: 'border-l-sky-500',
+    dotColor: 'bg-sky-500',
+    label: 'Model Added',
+    category: 'model',
+  },
+  model_deployed: {
+    icon: Server,
+    color: 'text-sky-600 dark:text-sky-400',
+    bgColor: 'bg-sky-100 dark:bg-sky-900/40',
+    borderColor: 'border-l-sky-500',
+    dotColor: 'bg-sky-500',
+    label: 'Deployed',
+    category: 'model',
+  },
+  profile_created: {
+    icon: SlidersHorizontal,
+    color: 'text-violet-600 dark:text-violet-400',
+    bgColor: 'bg-violet-100 dark:bg-violet-900/40',
+    borderColor: 'border-l-violet-500',
+    dotColor: 'bg-violet-500',
+    label: 'Profile Created',
+    category: 'analysis',
+  },
+  analysis_ready: {
+    icon: BarChart3,
+    color: 'text-violet-600 dark:text-violet-400',
+    bgColor: 'bg-violet-100 dark:bg-violet-900/40',
+    borderColor: 'border-l-violet-500',
+    dotColor: 'bg-violet-500',
+    label: 'Analysis Ready',
+    category: 'analysis',
+  },
+  system_alert: {
+    icon: AlertTriangle,
+    color: 'text-orange-600 dark:text-orange-400',
+    bgColor: 'bg-orange-100 dark:bg-orange-900/40',
+    borderColor: 'border-l-orange-500',
+    dotColor: 'bg-orange-500',
+    label: 'System Alert',
+    category: 'alert',
+  },
+}
+
+function generateInitialActivities(): TimelineActivity[] {
+  const now = new Date()
+  const activities: TimelineActivity[] = [
+    {
+      id: 'act-1',
+      type: 'benchmark_completed',
+      title: 'Qwen2.5-72B Multi-Stream completed',
+      description: 'Throughput: 4,218 tokens/s, Latency P99: 142ms',
+      timestamp: new Date(now.getTime() - 5 * 60 * 1000),
+      relatedModel: 'Qwen2.5-72B',
+      relatedEngine: 'sglang',
+    },
+    {
+      id: 'act-2',
+      type: 'model_deployed',
+      title: 'LLaMA-3.1-70B deployed to cluster',
+      description: 'Deployed on GPU Node 2 with VLLM engine',
+      timestamp: new Date(now.getTime() - 23 * 60 * 1000),
+      relatedModel: 'LLaMA-3.1-70B',
+      relatedEngine: 'vllm',
+    },
+    {
+      id: 'act-3',
+      type: 'benchmark_started',
+      title: 'DeepSeek-V3 Burst test started',
+      description: 'Concurrency: 64, Duration: 30s',
+      timestamp: new Date(now.getTime() - 45 * 60 * 1000),
+      relatedModel: 'DeepSeek-V3-671B',
+      relatedEngine: 'vllm',
+    },
+    {
+      id: 'act-4',
+      type: 'profile_created',
+      title: 'Profile "High Throughput" created',
+      description: 'Max sequences: 256, GPU mem util: 0.92',
+      timestamp: new Date(now.getTime() - 1.2 * 60 * 60 * 1000),
+      relatedModel: 'Qwen2.5-72B',
+      relatedEngine: 'sglang',
+    },
+    {
+      id: 'act-5',
+      type: 'analysis_ready',
+      title: 'Concurrency vs Throughput analysis ready',
+      description: 'Inflection point detected at concurrency=48',
+      timestamp: new Date(now.getTime() - 1.8 * 60 * 60 * 1000),
+      relatedModel: 'LLaMA-3.1-70B',
+      relatedEngine: 'vllm',
+    },
+    {
+      id: 'act-6',
+      type: 'benchmark_failed',
+      title: 'Mistral-7B Serving test failed',
+      description: 'OOM error at concurrency=128, GPU memory exceeded',
+      timestamp: new Date(now.getTime() - 2.5 * 60 * 60 * 1000),
+      relatedModel: 'Mistral-7B',
+      relatedEngine: 'vllm',
+    },
+    {
+      id: 'act-7',
+      type: 'model_added',
+      title: 'New model registered: Yi-1.5-34B',
+      description: 'SGLang engine, 34B parameters',
+      timestamp: new Date(now.getTime() - 3.2 * 60 * 60 * 1000),
+      relatedModel: 'Yi-1.5-34B',
+      relatedEngine: 'sglang',
+    },
+    {
+      id: 'act-8',
+      type: 'system_alert',
+      title: 'GPU Node 3 temperature warning',
+      description: 'H100 reached 78°C, utilization at 91%',
+      timestamp: new Date(now.getTime() - 4 * 60 * 60 * 1000),
+    },
+    {
+      id: 'act-9',
+      type: 'benchmark_completed',
+      title: 'Qwen2.5-72B Single-Stream completed',
+      description: 'Throughput: 2,850 tokens/s, Latency P99: 89ms',
+      timestamp: new Date(now.getTime() - 5.5 * 60 * 60 * 1000),
+      relatedModel: 'Qwen2.5-72B',
+      relatedEngine: 'sglang',
+    },
+    {
+      id: 'act-10',
+      type: 'model_deployed',
+      title: 'DeepSeek-V2-Lite deployed',
+      description: 'Deployed on GPU Node 1 with SGLang engine',
+      timestamp: new Date(now.getTime() - 8 * 60 * 60 * 1000),
+      relatedModel: 'DeepSeek-V2-Lite',
+      relatedEngine: 'sglang',
+    },
+    {
+      id: 'act-11',
+      type: 'benchmark_started',
+      title: 'LLaMA-3.1-70B Multi-Stream started',
+      description: 'Concurrency: 32, Duration: 120s',
+      timestamp: new Date(now.getTime() - 10 * 60 * 60 * 1000),
+      relatedModel: 'LLaMA-3.1-70B',
+      relatedEngine: 'vllm',
+    },
+    {
+      id: 'act-12',
+      type: 'analysis_ready',
+      title: 'GPU Memory vs Performance analysis ready',
+      description: 'Optimal GPU memory utilization: 0.85',
+      timestamp: new Date(now.getTime() - 14 * 60 * 60 * 1000),
+      relatedModel: 'DeepSeek-V2-Lite',
+      relatedEngine: 'sglang',
+    },
+    {
+      id: 'act-13',
+      type: 'profile_created',
+      title: 'Profile "Low Latency" created',
+      description: 'Max sequences: 64, chunk prefill enabled',
+      timestamp: new Date(now.getTime() - 18 * 60 * 60 * 1000),
+      relatedModel: 'LLaMA-3.1-70B',
+      relatedEngine: 'vllm',
+    },
+    {
+      id: 'act-14',
+      type: 'system_alert',
+      title: 'API endpoint latency spike detected',
+      description: 'P99 latency exceeded 500ms for 2 minutes',
+      timestamp: new Date(now.getTime() - 22 * 60 * 60 * 1000),
+    },
+    {
+      id: 'act-15',
+      type: 'benchmark_completed',
+      title: 'Mistral-7B Single-Stream completed',
+      description: 'Throughput: 1,920 tokens/s, Latency P99: 67ms',
+      timestamp: new Date(now.getTime() - 26 * 60 * 60 * 1000),
+      relatedModel: 'Mistral-7B',
+      relatedEngine: 'vllm',
+    },
+  ]
+  return activities
+}
+
+function getRelativeTime(date: Date): string {
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffSec = Math.floor(diffMs / 1000)
+  const diffMin = Math.floor(diffSec / 60)
+  const diffHr = Math.floor(diffMin / 60)
+  const diffDay = Math.floor(diffHr / 24)
+
+  if (diffSec < 60) return 'just now'
+  if (diffMin < 60) return `${diffMin}m ago`
+  if (diffHr < 24) return `${diffHr}h ago`
+  if (diffDay === 1) return 'Yesterday'
+  if (diffDay < 7) return `${diffDay}d ago`
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+function getDateLabel(date: Date): string | null {
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000)
+  const activityDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+
+  if (activityDay.getTime() === today.getTime()) return 'Today'
+  if (activityDay.getTime() === yesterday.getTime()) return 'Yesterday'
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+const RANDOM_ACTIVITIES: Omit<TimelineActivity, 'id' | 'timestamp' | 'isNew'>[] = [
+  { type: 'benchmark_completed', title: 'Qwen2.5-7B Single-Stream completed', description: 'Throughput: 5,120 tokens/s', relatedModel: 'Qwen2.5-7B', relatedEngine: 'vllm' },
+  { type: 'benchmark_started', title: 'LLaMA-3.1-70B Burst test started', description: 'Concurrency: 64', relatedModel: 'LLaMA-3.1-70B', relatedEngine: 'vllm' },
+  { type: 'model_added', title: 'New model registered: Gemma-2-27B', description: 'SGLang engine, 27B parameters', relatedModel: 'Gemma-2-27B', relatedEngine: 'sglang' },
+  { type: 'benchmark_failed', title: 'Yi-1.5-34B Serving test failed', description: 'Timeout after 600s', relatedModel: 'Yi-1.5-34B', relatedEngine: 'sglang' },
+  { type: 'analysis_ready', title: 'Batch Size vs Latency analysis ready', description: 'Optimal batch size: 16', relatedModel: 'Qwen2.5-72B', relatedEngine: 'sglang' },
+  { type: 'system_alert', title: 'Memory pool usage above 90%', description: 'Consider scaling GPU resources' },
+  { type: 'profile_created', title: 'Profile "Memory Saver" created', description: 'GPU mem util: 0.7, swap: 4GB', relatedModel: 'DeepSeek-V2-Lite', relatedEngine: 'sglang' },
+  { type: 'model_deployed', title: 'Mistral-7B redeployed with update', description: 'VLLM v0.6.2, Node 3', relatedModel: 'Mistral-7B', relatedEngine: 'vllm' },
+  { type: 'benchmark_completed', title: 'DeepSeek-V3 Burst test completed', description: 'Throughput: 3,780 tokens/s', relatedModel: 'DeepSeek-V3-671B', relatedEngine: 'vllm' },
+]
+
+// ── GPU Cluster data types & initial state ────────────────────────────────
+
+interface GpuNodeData {
+  name: string
+  model: string
+  utilization: number
+  temperature: number
+  memoryUsed: number
+  memoryTotal: number
+  powerDraw: number
+  powerMax: number
+  status: 'healthy' | 'warning' | 'critical'
+}
+
+const INITIAL_GPU_NODES: GpuNodeData[] = [
+  {
+    name: 'GPU Node 1',
+    model: 'A100',
+    utilization: 72,
+    temperature: 62,
+    memoryUsed: 68.2,
+    memoryTotal: 80.0,
+    powerDraw: 285,
+    powerMax: 400,
+    status: 'healthy',
+  },
+  {
+    name: 'GPU Node 2',
+    model: 'A100',
+    utilization: 78,
+    temperature: 67,
+    memoryUsed: 72.4,
+    memoryTotal: 80.0,
+    powerDraw: 310,
+    powerMax: 400,
+    status: 'healthy',
+  },
+  {
+    name: 'GPU Node 3',
+    model: 'H100',
+    utilization: 83,
+    temperature: 74,
+    memoryUsed: 64.0,
+    memoryTotal: 80.0,
+    powerDraw: 217,
+    powerMax: 400,
+    status: 'warning',
+  },
+]
+
+// ── SVG Circular Gauge Component ──────────────────────────────────────────
+
+function CircularGauge({ value, size = 88, strokeWidth = 8 }: { value: number; size?: number; strokeWidth?: number }) {
+  const radius = (size - strokeWidth) / 2
+  const circumference = 2 * Math.PI * radius
+  const offset = circumference - (value / 100) * circumference
+
+  const color =
+    value > 85
+      ? 'stroke-red-500'
+      : value > 60
+        ? 'stroke-amber-500'
+        : 'stroke-emerald-500'
+
+  const textColor =
+    value > 85
+      ? 'text-red-600 dark:text-red-400'
+      : value > 60
+        ? 'text-amber-600 dark:text-amber-400'
+        : 'text-emerald-600 dark:text-emerald-400'
+
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        {/* Background circle */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          strokeWidth={strokeWidth}
+          className="stroke-muted/30"
+        />
+        {/* Foreground arc */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          className={`${color} transition-[stroke-dashoffset] duration-700 ease-out`}
+        />
+      </svg>
+      {/* Center percentage */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className={`text-sm font-bold ${textColor}`}>
+          {Math.round(value)}%
+        </span>
+      </div>
+    </div>
+  )
 }
 
 // ── Stat card gradient backgrounds ────────────────────────────────────────
@@ -418,6 +807,123 @@ export function DashboardPage() {
     vllm: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400',
     sglang: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400',
   }
+
+  // ── GPU Cluster real-time simulation ──────────────────────────────────
+  const [gpuNodes, setGpuNodes] = useState<GpuNodeData[]>(INITIAL_GPU_NODES)
+  const gpuIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    gpuIntervalRef.current = setInterval(() => {
+      setGpuNodes(prev =>
+        prev.map(node => {
+          // Utilization: random walk ±3%, clamped 10-98
+          const utilDelta = (Math.random() - 0.5) * 6
+          const newUtil = Math.max(10, Math.min(98, node.utilization + utilDelta))
+
+          // Temperature: correlated with utilization, ±1°C
+          const targetTemp = 35 + (newUtil / 100) * 55 // 35-90°C range
+          const tempDelta = (Math.random() - 0.5) * 2
+          const newTemp = Math.max(30, Math.min(95, node.temperature + (targetTemp - node.temperature) * 0.15 + tempDelta))
+
+          // Memory: slow change ±0.5GB
+          const memDelta = (Math.random() - 0.5) * 1.0
+          const newMem = Math.max(20, Math.min(node.memoryTotal - 1, node.memoryUsed + memDelta))
+
+          // Power: correlated with utilization
+          const targetPower = 80 + (newUtil / 100) * (node.powerMax - 100)
+          const powerDelta = (Math.random() - 0.5) * 20
+          const newPower = Math.max(80, Math.min(node.powerMax, node.powerDraw + (targetPower - node.powerDraw) * 0.1 + powerDelta))
+
+          // Status based on temp/util
+          let status: GpuNodeData['status'] = 'healthy'
+          if (newTemp > 80 || newUtil > 90) status = 'critical'
+          else if (newTemp > 70 || newUtil > 85) status = 'warning'
+
+          return {
+            ...node,
+            utilization: Math.round(newUtil * 10) / 10,
+            temperature: Math.round(newTemp * 10) / 10,
+            memoryUsed: Math.round(newMem * 10) / 10,
+            powerDraw: Math.round(newPower),
+            status,
+          }
+        }),
+      )
+    }, 2000)
+
+    return () => {
+      if (gpuIntervalRef.current) clearInterval(gpuIntervalRef.current)
+    }
+  }, [])
+
+  // GPU cluster aggregates
+  const gpuClusterSummary = useMemo(() => {
+    const totalMemUsed = gpuNodes.reduce((s, n) => s + n.memoryUsed, 0)
+    const totalMemMax = gpuNodes.reduce((s, n) => s + n.memoryTotal, 0)
+    const avgUtil = gpuNodes.reduce((s, n) => s + n.utilization, 0) / gpuNodes.length
+    const totalPower = gpuNodes.reduce((s, n) => s + n.powerDraw, 0)
+    const totalPowerMax = gpuNodes.reduce((s, n) => s + n.powerMax, 0)
+    return {
+      totalMemUsed: Math.round(totalMemUsed * 10) / 10,
+      totalMemMax,
+      avgUtil: Math.round(avgUtil * 10) / 10,
+      totalPower,
+      totalPowerMax,
+    }
+  }, [gpuNodes])
+
+  // ── Activity Timeline state & simulation ─────────────────────────────────
+  const [timelineActivities, setTimelineActivities] = useState<TimelineActivity[]>(generateInitialActivities)
+  const [timelineFilter, setTimelineFilter] = useState<'all' | 'benchmark' | 'model' | 'analysis' | 'alert'>('all')
+  const [timelineExpanded, setTimelineExpanded] = useState(false)
+  const activityIdRef = useRef(100)
+
+  const addRandomActivity = useCallback(() => {
+    const template = RANDOM_ACTIVITIES[Math.floor(Math.random() * RANDOM_ACTIVITIES.length)]
+    const newActivity: TimelineActivity = {
+      ...template,
+      id: `act-live-${activityIdRef.current++}`,
+      timestamp: new Date(),
+      isNew: true,
+    }
+    setTimelineActivities(prev => {
+      const updated = [newActivity, ...prev]
+      // Keep max 20 items
+      if (updated.length > 20) return updated.slice(0, 20)
+      return updated
+    })
+    // Clear the "isNew" flash after 2 seconds
+    setTimeout(() => {
+      setTimelineActivities(prev =>
+        prev.map(a => a.id === newActivity.id ? { ...a, isNew: false } : a)
+      )
+    }, 2000)
+  }, [])
+
+  useEffect(() => {
+    const interval = setInterval(addRandomActivity, 15000 + Math.random() * 5000)
+    return () => clearInterval(interval)
+  }, [addRandomActivity])
+
+  const filteredActivities = useMemo(() => {
+    if (timelineFilter === 'all') return timelineActivities
+    return timelineActivities.filter(a => ACTIVITY_TYPE_CONFIG[a.type].category === timelineFilter)
+  }, [timelineActivities, timelineFilter])
+
+  const displayedActivities = useMemo(() => {
+    if (timelineExpanded) return filteredActivities
+    return filteredActivities.slice(0, 5)
+  }, [filteredActivities, timelineExpanded])
+
+  const filterCounts = useMemo(() => {
+    return {
+      all: timelineActivities.length,
+      benchmark: timelineActivities.filter(a => ACTIVITY_TYPE_CONFIG[a.type].category === 'benchmark').length,
+      model: timelineActivities.filter(a => ACTIVITY_TYPE_CONFIG[a.type].category === 'model').length,
+      analysis: timelineActivities.filter(a => ACTIVITY_TYPE_CONFIG[a.type].category === 'analysis').length,
+      alert: timelineActivities.filter(a => ACTIVITY_TYPE_CONFIG[a.type].category === 'alert').length,
+    }
+  }, [timelineActivities])
 
   return (
     <motion.div
@@ -968,6 +1474,202 @@ export function DashboardPage() {
         </div>
       </motion.div>
 
+      {/* ── GPU Cluster Monitor ─────────────────────────────────────── */}
+      <motion.div variants={item}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Cpu className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+            <h2 className="text-lg font-semibold tracking-tight">GPU Cluster Monitor</h2>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-xs text-muted-foreground">Live · 2s refresh</span>
+          </div>
+        </div>
+
+        {/* GPU Node Cards */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {gpuNodes.map((node, index) => {
+            const statusDotColor =
+              node.status === 'healthy'
+                ? 'bg-emerald-500'
+                : node.status === 'warning'
+                  ? 'bg-amber-500'
+                  : 'bg-red-500'
+
+            const tempPct = Math.max(0, Math.min(100, ((node.temperature - 30) / (95 - 30)) * 100))
+            const tempColor =
+              node.temperature > 80
+                ? 'bg-red-500'
+                : node.temperature > 60
+                  ? 'bg-amber-500'
+                  : 'bg-teal-500'
+
+            const tempTextColor =
+              node.temperature > 80
+                ? 'text-red-600 dark:text-red-400'
+                : node.temperature > 60
+                  ? 'text-amber-600 dark:text-amber-400'
+                  : 'text-teal-600 dark:text-teal-400'
+
+            const memPct = (node.memoryUsed / node.memoryTotal) * 100
+
+            return (
+              <motion.div
+                key={node.name}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1, duration: 0.4, ease: 'easeOut' }}
+              >
+                <Card className="overflow-hidden py-0 gap-0">
+                  {/* Dark gradient header */}
+                  <div className="bg-gradient-to-r from-slate-800 to-slate-700 dark:from-slate-900 dark:to-slate-800 px-4 py-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Server className="h-4 w-4 text-slate-300" />
+                      <span className="text-sm font-semibold text-white">{node.name} ({node.model})</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className={`h-2 w-2 rounded-full ${statusDotColor} ${node.status === 'critical' ? 'animate-pulse' : ''}`} />
+                      <span className="text-xs text-slate-400 capitalize">{node.status}</span>
+                    </div>
+                  </div>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-4">
+                      {/* Circular Gauge */}
+                      <CircularGauge value={node.utilization} />
+                      {/* Metrics */}
+                      <div className="flex-1 space-y-3 min-w-0">
+                        {/* Temperature */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-1.5">
+                              <Thermometer className="h-3 w-3 text-muted-foreground" />
+                              <span className="text-xs text-muted-foreground">Temp</span>
+                            </div>
+                            <span className={`text-xs font-semibold ${tempTextColor}`}>{node.temperature}°C</span>
+                          </div>
+                          <div className="h-1.5 w-full rounded-full bg-muted/30 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${tempColor} transition-all duration-700 ease-out`}
+                              style={{ width: `${tempPct}%` }}
+                            />
+                          </div>
+                        </div>
+                        {/* Memory */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-1.5">
+                              <HardDrive className="h-3 w-3 text-muted-foreground" />
+                              <span className="text-xs text-muted-foreground">Memory</span>
+                            </div>
+                            <span className="text-xs font-semibold text-foreground">
+                              {node.memoryUsed} / {node.memoryTotal} GB
+                            </span>
+                          </div>
+                          <div className="h-1.5 w-full rounded-full bg-muted/30 overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-emerald-500 transition-all duration-700 ease-out"
+                              style={{ width: `${memPct}%` }}
+                            />
+                          </div>
+                        </div>
+                        {/* Power */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <Zap className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-xs text-muted-foreground">Power</span>
+                          </div>
+                          <span className="text-xs font-semibold text-foreground">
+                            {node.powerDraw}W / {node.powerMax}W
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )
+          })}
+        </div>
+
+        {/* Cluster Summary Row */}
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Total GPU Memory */}
+          <Card className="py-0 gap-0">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-muted-foreground font-medium">Total GPU Memory</span>
+                <span className="text-xs font-semibold text-foreground">
+                  {gpuClusterSummary.totalMemUsed} / {gpuClusterSummary.totalMemMax} GB
+                </span>
+              </div>
+              <Progress
+                value={(gpuClusterSummary.totalMemUsed / gpuClusterSummary.totalMemMax) * 100}
+                className="h-2 [&>div]:bg-emerald-500"
+              />
+            </CardContent>
+          </Card>
+
+          {/* Average Utilization */}
+          <Card className="py-0 gap-0">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-muted-foreground font-medium">Avg Utilization</span>
+                <span className="text-xs font-semibold text-foreground">
+                  {gpuClusterSummary.avgUtil}%
+                </span>
+              </div>
+              <Progress
+                value={gpuClusterSummary.avgUtil}
+                className={cn(
+                  'h-2',
+                  gpuClusterSummary.avgUtil > 85
+                    ? '[&>div]:bg-red-500'
+                    : gpuClusterSummary.avgUtil > 60
+                      ? '[&>div]:bg-amber-500'
+                      : '[&>div]:bg-emerald-500'
+                )}
+              />
+            </CardContent>
+          </Card>
+
+          {/* Total Power */}
+          <Card className="py-0 gap-0">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-muted-foreground font-medium">Total Power</span>
+                <span className="text-xs font-semibold text-foreground">
+                  {gpuClusterSummary.totalPower}W / {gpuClusterSummary.totalPowerMax}W
+                </span>
+              </div>
+              <Progress
+                value={(gpuClusterSummary.totalPower / gpuClusterSummary.totalPowerMax) * 100}
+                className="h-2 [&>div]:bg-amber-500"
+              />
+            </CardContent>
+          </Card>
+
+          {/* Active Processes */}
+          <Card className="py-0 gap-0">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-muted-foreground font-medium">Active Processes</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <div className="h-2 w-2 rounded-full bg-emerald-500" />
+                  <span className="text-xs text-foreground font-medium">7 serving</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="h-2 w-2 rounded-full bg-amber-500" />
+                  <span className="text-xs text-foreground font-medium">3 benchmarking</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </motion.div>
+
       {/* ── System Health ───────────────────────────────────────────── */}
       <motion.div variants={item}>
         <h2 className="text-lg font-semibold tracking-tight mb-3">System Health</h2>
@@ -1058,81 +1760,185 @@ export function DashboardPage() {
         </div>
       </motion.div>
 
-      {/* ── Recent Activity Timeline ───────────────────────────────── */}
+      {/* ── Activity Timeline ─────────────────────────────────────── */}
       <motion.div variants={item}>
-        <h2 className="text-lg font-semibold tracking-tight mb-3">Recent Activity</h2>
-        <Card className="py-0 gap-0">
-          <CardContent className="p-5">
-            <div className="relative space-y-0">
-              {[
-                {
-                  icon: CheckCircle2,
-                  color: 'text-emerald-500',
-                  dotColor: 'bg-emerald-500',
-                  lineColor: 'bg-emerald-200 dark:bg-emerald-800',
-                  title: 'Benchmark completed: Qwen2.5-72B Multi-Stream',
-                  time: '5 min ago',
-                },
-                {
-                  icon: Info,
-                  color: 'text-sky-500',
-                  dotColor: 'bg-sky-500',
-                  lineColor: 'bg-sky-200 dark:bg-sky-800',
-                  title: 'Model deployed: LLaMA-3.1-70B',
-                  time: '23 min ago',
-                },
-                {
-                  icon: SlidersHorizontal,
-                  color: 'text-amber-500',
-                  dotColor: 'bg-amber-500',
-                  lineColor: 'bg-amber-200 dark:bg-amber-800',
-                  title: 'Parameter profile updated: High Throughput',
-                  time: '1h ago',
-                },
-                {
-                  icon: TrendingUp,
-                  color: 'text-sky-500',
-                  dotColor: 'bg-sky-500',
-                  lineColor: 'bg-sky-200 dark:bg-sky-800',
-                  title: 'New analysis: Concurrency vs Throughput',
-                  time: '2h ago',
-                },
-                {
-                  icon: XCircle,
-                  color: 'text-rose-500',
-                  dotColor: 'bg-rose-500',
-                  lineColor: 'bg-rose-200 dark:bg-rose-800',
-                  title: 'Benchmark failed: DeepSeek-V3 Burst Test',
-                  time: '3h ago',
-                  isLast: true,
-                },
-              ].map((activity, index) => {
-                const Icon = activity.icon
-                return (
-                  <motion.div
-                    key={index}
-                    initial={{ opacity: 0, x: -8 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.08, duration: 0.3 }}
-                    className="flex items-start gap-4 pb-6 last:pb-0"
-                  >
-                    {/* Timeline connector */}
-                    <div className="relative flex flex-col items-center">
-                      <div className={cn('h-8 w-8 rounded-full flex items-center justify-center shrink-0 bg-background border-2', activity.dotColor.replace('bg-', 'border-'))}>
-                        <Icon className={cn('h-4 w-4', activity.color)} />
-                      </div>
-                      {!activity.isLast && (
-                        <div className={cn('w-0.5 flex-1 mt-1', activity.lineColor)} />
+        <Card className="py-0 gap-0 overflow-hidden">
+          <CardHeader className="pb-3 pt-5 px-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  {/* Pulsing green live dot */}
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                  </span>
+                  <CardTitle className="text-base font-semibold">Activity Timeline</CardTitle>
+                </div>
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 font-medium border-emerald-300 text-emerald-600 dark:border-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30">
+                  Live
+                </Badge>
+              </div>
+              <span className="text-xs text-muted-foreground">{filteredActivities.length} events</span>
+            </div>
+          </CardHeader>
+          <CardContent className="px-5 pb-5 pt-0">
+            {/* ── Filter Bar ──────────────────────────────────────── */}
+            <div className="flex items-center gap-1.5 mb-4 flex-wrap">
+              {([
+                { key: 'all' as const, label: 'All' },
+                { key: 'benchmark' as const, label: 'Benchmarks' },
+                { key: 'model' as const, label: 'Models' },
+                { key: 'analysis' as const, label: 'Analysis' },
+                { key: 'alert' as const, label: 'Alerts' },
+              ]).map((filter) => (
+                <button
+                  key={filter.key}
+                  onClick={() => { setTimelineFilter(filter.key); setTimelineExpanded(false) }}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all duration-200',
+                    timelineFilter === filter.key
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-400 shadow-sm'
+                      : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
+                  )}
+                >
+                  {filter.label}
+                  <span className={cn(
+                    'inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold',
+                    timelineFilter === filter.key
+                      ? 'bg-emerald-200 text-emerald-800 dark:bg-emerald-800 dark:text-emerald-200'
+                      : 'bg-muted text-muted-foreground'
+                  )}>
+                    {filterCounts[filter.key]}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* ── Timeline ────────────────────────────────────────── */}
+            <div className="relative">
+              {/* Vertical emerald line */}
+              <div className="absolute left-[15px] top-2 bottom-2 w-0.5 bg-emerald-200 dark:bg-emerald-800/60 rounded-full" />
+
+              <AnimatePresence mode="popLayout">
+                {displayedActivities.map((activity, index) => {
+                  const config = ACTIVITY_TYPE_CONFIG[activity.type]
+                  const Icon = config.icon
+                  const dateLabel = getDateLabel(activity.timestamp)
+                  const showDateLabel = index === 0 || getDateLabel(displayedActivities[index - 1].timestamp) !== dateLabel
+
+                  return (
+                    <motion.div
+                      key={activity.id}
+                      layout
+                      initial={{ opacity: 0, x: -12, height: 0 }}
+                      animate={{ opacity: 1, x: 0, height: 'auto' }}
+                      exit={{ opacity: 0, x: -12, height: 0 }}
+                      transition={{ duration: 0.3, ease: 'easeOut' }}
+                    >
+                      {/* Date separator */}
+                      {showDateLabel && (
+                        <div className="flex items-center gap-3 mb-2 mt-3 first:mt-0">
+                          <div className="relative z-10 w-[30px] flex justify-center">
+                            <div className="h-2 w-2 rounded-full bg-emerald-300 dark:bg-emerald-700 ring-2 ring-background" />
+                          </div>
+                          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                            {dateLabel}
+                          </span>
+                          <div className="flex-1 h-px bg-border/50" />
+                        </div>
                       )}
-                    </div>
-                    {/* Content */}
-                    <div className="flex-1 min-w-0 pt-1">
-                      <p className="text-sm font-medium leading-snug">{activity.title}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{activity.time}</p>
-                    </div>
-                  </motion.div>
-                )
-              })}
+
+                      {/* Activity item */}
+                      <div
+                        className={cn(
+                          'flex items-start gap-3 pb-3 group relative',
+                          activity.isNew && 'animate-pulse'
+                        )}
+                      >
+                        {/* Timeline node */}
+                        <div className="relative z-10 flex-shrink-0 mt-1">
+                          <div className={cn(
+                            'h-[30px] w-[30px] rounded-full flex items-center justify-center border-2 border-background shadow-sm transition-all duration-200',
+                            config.bgColor
+                          )}>
+                            <Icon className={cn('h-3.5 w-3.5', config.color)} />
+                          </div>
+                        </div>
+
+                        {/* Content card */}
+                        <div
+                          className={cn(
+                            'flex-1 min-w-0 rounded-lg border bg-card px-3 py-2.5 transition-all duration-200',
+                            'hover:shadow-md hover:border-l-2',
+                            config.borderColor,
+                            activity.isNew && 'ring-2 ring-emerald-400/50 dark:ring-emerald-500/30'
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="text-sm font-medium leading-snug">{activity.title}</p>
+                                <Badge variant="outline" className={cn(
+                                  'text-[9px] px-1.5 py-0 h-4 font-semibold shrink-0',
+                                  config.color,
+                                  config.bgColor,
+                                  'border-transparent'
+                                )}>
+                                  {config.label}
+                                </Badge>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{activity.description}</p>
+                              <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                <span className="text-[11px] text-muted-foreground">{getRelativeTime(activity.timestamp)}</span>
+                                {activity.relatedModel && (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[11px] text-muted-foreground/60">•</span>
+                                    <span className="text-[11px] font-medium text-muted-foreground">{activity.relatedModel}</span>
+                                    {activity.relatedEngine && (
+                                      <Badge className={cn(
+                                        'text-[9px] px-1 py-0 h-3.5 font-semibold',
+                                        activity.relatedEngine === 'vllm'
+                                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
+                                          : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'
+                                      )}>
+                                        {activity.relatedEngine.toUpperCase()}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )
+                })}
+              </AnimatePresence>
+
+              {/* Expand / Collapse button */}
+              {filteredActivities.length > 5 && (
+                <div className="flex justify-center mt-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setTimelineExpanded(prev => !prev)}
+                    className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    {timelineExpanded ? (
+                      <>
+                        <ChevronUp className="h-3.5 w-3.5" />
+                        Show less
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="h-3.5 w-3.5" />
+                        Show all ({filteredActivities.length})
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

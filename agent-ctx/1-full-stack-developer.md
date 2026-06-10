@@ -1,30 +1,51 @@
-# Task 1: AI Assistant Chatbot for InferBench
+# Task 1: Add GPU Real-time Monitor Panel to the Dashboard
 
-## Summary
-Built a complete AI Assistant chatbot feature for the InferBench platform with backend API and floating frontend widget.
+## Agent: full-stack-developer
 
-## Files Created/Modified
-1. **Created** `src/app/api/chat/route.ts` - Backend POST endpoint using z-ai-web-dev-sdk
-2. **Created** `src/components/chat/ai-chat-widget.tsx` - Floating chat widget component
-3. **Modified** `src/app/page.tsx` - Added AIChatWidget import and render
-4. **Fixed** `src/components/reports/reports-page.tsx` - Resolved Tooltip name collision bug
+## Work Done
 
-## Key Decisions
-- Used z-ai-web-dev-sdk only in backend (route.ts), never on client side
-- System prompt covers: tensor parallelism, GPU memory, max_num_seqs, chunked prefill, prefix caching, benchmark metrics, workload scenarios, InferBench features
-- Client-managed conversation history (passed in each request body)
-- Chat state uses local useState (not Zustand) per requirements
-- Markdown rendering via react-markdown for AI responses
-- Framer-motion animations for panel open/close and typing indicator
-- Emerald/amber color scheme consistent with rest of app
-- Mobile responsive: full-width on small screens
+Modified `src/components/dashboard/dashboard-page.tsx` to add a "GPU Cluster Monitor" section between the Quick Actions and System Health sections on the Dashboard.
 
-## Pre-existing Bug Fixed
-- reports-page.tsx had `Tooltip` imported from both recharts and shadcn/ui tooltip
-- This caused a "name defined multiple times" error and 500 on homepage
-- Fixed by aliasing shadcn/ui imports to UITooltip, UITooltipTrigger, UITooltipContent
+### Changes Made
+
+1. **Imports**: Added `useState, useEffect, useRef` from React; added `Thermometer, Cpu` from lucide-react
+
+2. **GPU Data Types & Initial State**:
+   - `GpuNodeData` interface: name, model, utilization, temperature, memoryUsed, memoryTotal, powerDraw, powerMax, status
+   - `INITIAL_GPU_NODES`: 3 GPU nodes (2x A100, 1x H100) with realistic initial values
+
+3. **CircularGauge SVG Component**:
+   - Custom SVG circular arc gauge using stroke-dasharray/stroke-dashoffset technique
+   - Color: emerald (0-60%), amber (60-85%), red (85-100%)
+   - CSS `transition-[stroke-dashoffset] duration-700 ease-out` for smooth animation
+   - Percentage number displayed in center
+
+4. **Simulation Logic** (useEffect with setInterval, 2s interval):
+   - Utilization: random walk ±3%, clamped 10-98%
+   - Temperature: correlated with utilization, ±1°C, clamped 30-95°C
+   - Memory: slow ±0.5GB change per tick
+   - Power: correlated with utilization
+   - Status auto-determined from thresholds
+   - Cleanup via useRef on unmount
+
+5. **GPU Cluster Monitor Section**:
+   - Header with Cpu icon, "Live · 2s refresh" indicator
+   - 3 GPU node cards (responsive grid: 3 cols lg, 1 col mobile):
+     - Dark gradient header with node name/model and status dot
+     - CircularGauge for utilization
+     - Temperature bar (teal/amber/red)
+     - Memory bar with used/total GB
+     - Power draw text
+   - framer-motion staggered entrance (0.1s delay per card)
+   - Cluster Summary Row (4 cards):
+     - Total GPU Memory with progress bar
+     - Avg Utilization with color-coded progress bar
+     - Total Power with progress bar
+     - Active Processes display
+
+6. **Styling**: Dark theme support (dark: variants), consistent emerald/amber/red color coding, responsive layout
 
 ## Verification
-- ESLint: 0 errors
-- Dev server: compiles and serves (HTTP 200)
-- Chat API: tested via curl, returns successful AI responses
+- ESLint: zero errors
+- Dev server: compiles successfully
+- All existing Dashboard functionality preserved

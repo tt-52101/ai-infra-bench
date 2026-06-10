@@ -16,6 +16,7 @@ import { SettingsPage } from '@/components/settings/settings-page'
 import { AppSidebar } from '@/components/app-sidebar'
 import { CommandPalette } from '@/components/command-palette'
 import { NotificationCenter } from '@/components/notification-center'
+import { KeyboardShortcutsHelp } from '@/components/keyboard-shortcuts-help'
 import { AIChatWidget } from '@/components/chat/ai-chat-widget'
 import {
   SidebarProvider,
@@ -189,6 +190,7 @@ export default function Home() {
         </div>
       </div>
       <AIChatWidget />
+      <KeyboardShortcutsHelp />
     </SidebarProvider>
   )
 }

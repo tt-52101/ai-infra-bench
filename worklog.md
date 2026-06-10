@@ -1615,3 +1615,296 @@ Stage Summary:
 4. **PDF报告导出**：使用pdf skill实现专业PDF报告生成
 5. **更多图表类型**：添加雷达图、瀑布图等高级可视化
 6. **GPU实时监控面板**：模拟GPU利用率的实时更新仪表盘
+
+---
+Task ID: 3
+Agent: full-stack-developer
+Task: Add Keyboard Shortcut Help Overlay and PDF Report Export API
+
+Work Log:
+- Read worklog.md to understand previous work context (13+ prior tasks)
+- Read current page.tsx, types.ts, prisma schema, results API route, dashboard API route, reports page, command-palette component, performance-score module
+- Created `src/components/keyboard-shortcuts-help.tsx` - Full-screen modal overlay with:
+  - Trigger: "?" key or Ctrl+/ (Cmd+/) to open/close
+  - Escape key to close when open
+  - Input field detection: skips shortcut when typing in INPUT/TEXTAREA/SELECT/contentEditable
+  - Design: backdrop blur overlay (bg-black/50 backdrop-blur-sm) + centered card (max-w-600px)
+  - Title: "Keyboard Shortcuts" with Keyboard icon in emerald accent
+  - 3 grouped sections:
+    - Navigation: ⌘1-7 for Dashboard/Models/Parameters/Benchmark/Reports/Analysis/Settings
+    - General: ⌘K for Command Palette, ? for this help, ⌘⇧D for toggle theme
+    - Actions: ⌘B for New Benchmark, ⌘M for Add Model
+  - Each shortcut: description on left, styled `<kbd>` elements on right (inline-flex h-6 rounded border bg-muted px-2 font-mono text-xs)
+  - Group headers in emerald color (text-emerald-600 dark:text-emerald-400)
+  - Close button (X) in top-right corner
+  - Footer hint: "Press ? or Esc to close"
+  - Framer Motion entrance animation: fade + scale from 0.95 with [0.4, 0, 0.2, 1] easing
+  - AnimatePresence for smooth exit
+  - Dark theme support via Tailwind dark: variants
+  - 'use client' directive
+- Created `src/app/api/reports/export/route.ts` - POST endpoint for PDF report data:
+  - Accepts JSON body: { modelId?, engine?, scenario? } filter parameters
+  - Queries BenchmarkResult with Prisma, includes task → model relations
+  - Builds taskWhere filter: status='completed', optional modelId/engine/scenario filters
+  - Returns JSON structure:
+    - summary: { totalTests, avgThroughput, avgLatency, bestThroughput, bestLatency, gradeDistribution }
+    - results: Array of { model, engine, scenario, throughput, latency, ttft, tpot, grade } per result
+    - comparison: { vllm: { avgThroughput, avgLatency, count }, sglang: { avgThroughput, avgLatency, count } }
+    - generatedAt: ISO timestamp
+    - filters: applied filter values
+  - Grade calculation mirrors performance-score.ts weighted scoring (throughput 30%, latency 25%, TTFT 20%, TPOT 15%, reliability 10%)
+  - Handles empty results gracefully with zeroed summary
+  - Consistent response format: { success: true, data: ... } or { success: false, error: ... }
+- Modified `src/app/page.tsx`:
+  - Added import for KeyboardShortcutsHelp component
+  - Rendered `<KeyboardShortcutsHelp />` alongside `<AIChatWidget />` inside SidebarProvider
+- Ran ESLint: zero errors
+- Tested API endpoint via curl: POST /api/reports/export returns correct summary, results, comparison data
+- Dev server compiles and serves successfully
+
+Stage Summary:
+- Keyboard Shortcuts Help Overlay: Beautiful modal with framer-motion animations, 3 grouped sections (Navigation/General/Actions), styled kbd elements, backdrop blur, dark theme support
+- PDF Report Export API: POST /api/reports/export with modelId/engine/scenario filters, returns summary+results+comparison JSON with grade distribution
+- Both features fully integrated and tested
+- Zero lint errors
+
+---
+Task ID: 1
+Agent: full-stack-developer
+Task: Add GPU Real-time Monitor Panel to the Dashboard
+
+Work Log:
+- Read worklog.md to understand previous work on the InferBench platform
+- Read current dashboard-page.tsx (1142 lines) to understand existing structure: stats cards, performance grade, charts row, latency+table row, quick actions, system health, recent activity
+- Added GPU Cluster Monitor section between Quick Actions and System Health sections
+- Updated imports: added useState, useEffect, useRef from React; added Thermometer, Cpu from lucide-react
+- Added GpuNodeData interface with: name, model, utilization, temperature, memoryUsed, memoryTotal, powerDraw, powerMax, status
+- Added INITIAL_GPU_NODES constant with 3 GPU nodes: GPU Node 1 (A100, 72% util), GPU Node 2 (A100, 78% util), GPU Node 3 (H100, 83% util)
+- Created CircularGauge SVG component: circular arc gauge using stroke-dasharray/stroke-dashoffset, emerald/amber/red color coding (0-60/60-85/85+%), CSS transition on stroke-dashoffset for smooth animation, percentage display in center
+- Added GPU simulation logic with useEffect/setInterval (2 second interval):
+  - Utilization: random walk ±3%, clamped 10-98%
+  - Temperature: correlated with utilization (target = 35 + util% × 55), ±1°C, clamped 30-95°C
+  - Memory: slow random walk ±0.5GB, clamped 20 to total-1
+  - Power: correlated with utilization (target = 80 + util% × (max-100)), ±10W
+  - Status: healthy/warning/critical based on temperature and utilization thresholds
+  - Cleanup on unmount via useRef
+- Added gpuClusterSummary useMemo: totalMemUsed, totalMemMax, avgUtil, totalPower, totalPowerMax
+- Built GPU Cluster Monitor JSX section with:
+  - Header with Cpu icon, "GPU Cluster Monitor" title, green live pulse dot, "Live · 2s refresh" label
+  - 3 GPU node cards in responsive grid (3 cols desktop, 1 col mobile):
+    - Dark gradient header (slate-800 → slate-700, darker in dark mode) with node name, model, status dot
+    - CircularGauge for utilization
+    - Temperature bar (teal <60°C, amber 60-80°C, red >80°C)
+    - Memory bar with used/total GB display
+    - Power draw text (e.g., "285W / 400W")
+  - framer-motion staggered entrance animation (0.1s delay per card)
+  - Cluster Summary Row (4 cards in sm:grid-cols-2 lg:grid-cols-4):
+    - Total GPU Memory with Progress bar
+    - Avg Utilization with color-coded Progress bar
+    - Total Power with Progress bar
+    - Active Processes: "7 serving, 3 benchmarking" with colored dots
+- All existing Dashboard functionality preserved (stats cards, grade, charts, table, quick actions, system health, activity timeline)
+- Verified dark theme support: dark: variants on all new elements
+- Ran ESLint: zero errors
+- Dev server compiles successfully
+
+Stage Summary:
+- GPU Cluster Monitor section added to Dashboard with simulated real-time data updating every 2 seconds
+- 3 GPU node cards with SVG circular gauges (custom, no external library), temperature/memory/power metrics, status indicators
+- Cluster summary row with aggregated stats and progress bars
+- Consistent emerald/amber/red color coding throughout
+- framer-motion staggered entrance animations on GPU cards
+- Responsive: 3 columns desktop, 1 column mobile
+- Dark theme fully supported
+- Zero lint errors, dev server compiles successfully
+
+---
+Task ID: 2
+Agent: full-stack-developer
+Task: Add Benchmark Comparison Mode - Side-by-side compare two benchmark results
+
+Work Log:
+- Read worklog.md to understand project history and structure (InferBench platform, 6 modules, Next.js 16 + TypeScript + Tailwind + shadcn/ui + Recharts)
+- Read benchmark-page.tsx (1700+ lines) to understand existing structure: scenarios, helpers, StatusBadge, StatsCard, MiniThroughputChart, LatencyDistChart, TableSkeleton, BenchmarkPage with hooks, WebSocket handlers, simulation, config sheet, result detail dialog
+- Verified Checkbox component already exists at src/components/ui/checkbox.tsx
+- Added new imports: GitCompareArrows, X, Trophy, Minus, Scale from lucide-react; Checkbox from shadcn/ui
+- Added compare mode state: compareIds (string[], max 2), compareDialogOpen
+- Added compare handlers: handleCompareToggle (toggle selection, max 2), handleCompareClear (deselect all), handleCompareNow (open dialog when 2 selected)
+- Modified benchmark history table: added "Compare" column as first column with Checkbox, emerald border highlight on selected rows (border-l-2 border-l-emerald-500 bg-emerald-50/50), updated colSpan to 10
+- Built floating comparison bar: framer-motion spring animation slide-up from bottom, shows "N/2 selected" counter, selected benchmark names as emerald badges with X remove buttons, "Clear" and "Compare Now" buttons, z-50 fixed positioning
+- Built comparison dialog with: (1) Two-column header section showing benchmark name, model, engine badge, scenario, status for each result (emerald dot for A, amber dot for B), (2) Performance comparison table with 15 metrics in 4-column layout (Metric | Result A | Result B | Delta) with winner highlighting (emerald bg for better value), arrow indicators (↑ better, ↓ worse, — equal), delta percentage badges color-coded by winner, (3) Visual bar chart comparison using simple div bars for Throughput, Latency P99, TTFT with emerald/amber colors, (4) Legend with visual key for arrows and color dots
+- Handles missing results gracefully with error message
+- All comparison logic uses data already loaded from API (via useBenchmarks/useResults hooks)
+- Metrics include lowerIsBetter flag for proper winner determination (latency, memory, error rate)
+- Dark theme support throughout (dark: prefixed classes)
+- Ran ESLint: zero errors
+- Dev server compiles successfully
+
+Stage Summary:
+- Complete benchmark comparison mode with checkbox selection, floating bar, and detailed comparison dialog
+- Emerald/amber color scheme consistent with project theme
+- 15 performance metrics compared with winner indicators and delta calculations
+- Visual bar chart comparison for 3 key metrics (Throughput, Latency P99, TTFT)
+- Floating comparison bar with framer-motion spring animation
+- Dark theme fully supported
+- Zero lint errors, dev server compiles successfully
+
+
+---
+Task ID: 4
+Agent: full-stack-developer
+Task: Add PDF Report Export to the Reports Page
+
+Work Log:
+- Read worklog.md to understand previous work (full project history)
+- Read current reports-page.tsx to understand existing export dropdown (CSV, JSON, Clipboard), data structures (ReportResult, BenchmarkWithRelations, ResultWithTask), and all existing functionality
+- Read /api/reports/export route.ts to understand the server-side data shape (summary, results, comparison, gradeDistribution)
+- Read performance-score.ts for grade calculation context
+- Created `src/lib/generate-report-html.ts` - Complete HTML report generation utility with:
+  - ReportData interface types (ReportResultEntry, ReportSummary, ReportComparison, ReportFilters)
+  - gradeColor() and gradeBgColor() helper functions for professional styling
+  - formatScenario() and formatNumber() formatting utilities
+  - generateReportHTML() function that produces a complete standalone HTML document with:
+    - Professional cover page with InferBench logo, title, generation date, filter info
+    - Key Metrics Summary section (4 summary cards: best throughput, best latency, total tests, avg throughput)
+    - Grade Distribution table (A+ through F with counts and percentages)
+    - VLLM vs SGLang Comparison table (avg throughput, avg latency, result count with winner highlighting)
+    - Detailed Benchmark Results table (model, engine badge, scenario, throughput, latency, TTFT, TPOT, grade)
+    - Footer with "Generated by InferBench Platform"
+    - Print-ready CSS with @page directives, page-break hints, @media print styles
+    - Fixed print action bar at top with "Save as PDF" and "Close" buttons (hidden during print)
+    - System font stack, emerald/amber color scheme matching app branding
+    - Color-coded grade badges matching performance-score module
+    - Alternating row colors for readability
+  - fetchReportData() function that calls POST /api/reports/export with current filters
+  - openReportPrintWindow() function that opens the generated HTML in a new tab for printing
+- Modified `src/components/reports/reports-page.tsx`:
+  - Added FileDown icon import from lucide-react
+  - Added import of generateReportHTML, fetchReportData, openReportPrintWindow from '@/lib/generate-report-html'
+  - Added exportAsPDF() async function that:
+    - Guards against empty filtered data with toast.error
+    - Shows toast.loading "Generating PDF report..."
+    - Calls fetchReportData() with current model/engine/scenario filters
+    - Generates HTML with generateReportHTML()
+    - Opens in new window with openReportPrintWindow()
+    - Handles popup blocked with toast.error
+    - On success shows toast.success with "Use Save as PDF in the print dialog"
+    - On error shows toast.error
+    - Dismisses loading toast in finally block
+  - Added "Export PDF" as the first option in the Export DropdownMenu with FileDown icon
+- Ran ESLint: 0 errors
+- Verified dev server compiles and /api/reports/export endpoint returns 200
+
+Stage Summary:
+- PDF export functionality added to Reports page via browser print dialog approach
+- Professional HTML report generated with cover page, summary, grade distribution, engine comparison, and detailed results
+- Uses existing /api/reports/export API endpoint for data fetching with current filters
+- No Python dependency required - leverages browser's built-in "Save as PDF" capability
+- All existing export options (CSV, JSON, Clipboard) preserved intact
+- Zero lint errors, dev server compiles successfully
+
+---
+Task ID: 6
+Agent: full-stack-developer
+Task: Add Interactive Timeline History View to the Dashboard
+
+Work Log:
+- Read worklog.md and current dashboard-page.tsx to understand existing structure
+- Identified the "Recent Activity" section (simple 5-item list) to be replaced
+- Added new imports: `useCallback`, `AnimatePresence` from framer-motion, new Lucide icons (`Check`, `BarChart3`, `AlertTriangle`, `ChevronDown`, `ChevronUp`)
+- Removed unused imports: `TrendingUp`, `CheckCircle2`, `Info`, `Filter`, `Activity`
+- Added TimelineActivity type system with 8 activity types: `benchmark_started`, `benchmark_completed`, `benchmark_failed`, `model_added`, `model_deployed`, `profile_created`, `analysis_ready`, `system_alert`
+- Added ACTIVITY_TYPE_CONFIG mapping: each type has icon, color, bgColor, borderColor, dotColor, label, and category (benchmark/model/analysis/alert)
+- Added generateInitialActivities() function creating 15 rich activity items with timestamps spanning 5min to 26hrs ago
+- Added getRelativeTime() helper: "just now", "5m ago", "3h ago", "Yesterday", "2d ago", date format
+- Added getDateLabel() helper: "Today", "Yesterday", or "Jun 8" format for date separators
+- Added RANDOM_ACTIVITIES array (9 templates) for live simulation
+- Added timeline state: `timelineActivities`, `timelineFilter`, `timelineExpanded`
+- Added addRandomActivity callback using useCallback: picks random template, creates new activity with isNew=true, caps at 20 items, clears flash after 2s
+- Added simulation useEffect: setInterval at 15-20s random interval, cleanup on unmount
+- Added filteredActivities useMemo: filters by category when filter is active
+- Added displayedActivities useMemo: shows 5 items when collapsed, all when expanded
+- Added filterCounts useMemo: counts per category for badge display
+- Replaced "Recent Activity" section with comprehensive "Activity Timeline":
+  - **Live indicator**: Pulsing green dot + "Live" badge next to title
+  - **Filter bar**: 5 buttons (All, Benchmarks, Models, Analysis, Alerts) with count badges, active filter highlighted with emerald background
+  - **Vertical timeline**: Thin emerald line running down left side, date separators (Today/Yesterday/date) every few items
+  - **Activity nodes**: Colored circles on timeline with type-specific icons (Check=completed, Play=started, XCircle=failed, Box=model_added, Server=model_deployed, SlidersHorizontal=profile_created, BarChart3=analysis_ready, AlertTriangle=system_alert)
+  - **Content cards**: Title, type badge, description, relative time, model name + engine badge (VLLM/SGLang)
+  - **Hover effect**: Card gets shadow and left border accent on hover
+  - **New item flash**: Ring animation and pulse when a new activity is added via simulation
+  - **Expand/collapse**: Show latest 5 by default, "Show all (N)" button expands to show all filtered items
+  - **AnimatePresence**: Smooth item additions/removals with framer-motion slide-in from left
+- All existing Dashboard sections preserved (stats cards, performance grade, charts, GPU cluster, latency/table, quick actions)
+- Ran ESLint: zero errors
+- Verified dev server compiles successfully
+
+Stage Summary:
+- Dashboard "Recent Activity" replaced with comprehensive "Activity Timeline"
+- 8 activity types with color-coded icons and category system
+- 15 initial activity items with realistic descriptions
+- Filter bar with 5 categories and count badges
+- Live update simulation every 15-20 seconds with flash animation
+- Expand/collapse showing 5 items by default
+- Date separators (Today, Yesterday, date)
+- Full dark theme support
+- Responsive design on all screens
+- Zero lint errors, dev server compiles successfully
+
+---
+Task ID: R13-R18
+Agent: Main Agent (Cron Review + Feature Development Round 5)
+Task: QA测试、新增GPU监控、基准测试对比、键盘快捷键、PDF导出、活动时间线
+
+Work Log:
+- 使用agent-browser逐页测试所有7个页面 + AI聊天 + 模型对比 + 暗色主题
+- 零控制台错误、零lint错误、所有页面正常
+- 实现了5个新功能：
+  1. GPU Cluster Monitor - Dashboard新增GPU实时监控面板（3个GPU节点+SVG圆形仪表+温度/内存/功耗+集群汇总）
+  2. Benchmark Comparison Mode - 基准测试页面多选对比功能（15项指标对比表+可视化柱状图+胜者高亮）
+  3. Keyboard Shortcut Help - 按?键显示快捷键帮助覆盖层（导航/通用/操作3组快捷键）
+  4. PDF Report Export - Reports页面新增PDF导出（生成专业HTML报告+浏览器打印对话框）
+  5. Activity Timeline - Dashboard替换简单活动列表为交互式时间线（8种活动类型+过滤器+实时模拟更新+展开/折叠）
+
+Stage Summary:
+- GPU Monitor: 3个GPU节点卡片（A100/H100），SVG圆形仪表盘（emerald/amber/red三级颜色），2秒刷新模拟
+- Benchmark Comparison: 复选框选择+浮动对比栏+对比Dialog（15项性能指标+横向柱状图+胜者高亮+delta百分比）
+- Keyboard Shortcuts: 全屏遮罩+居中卡片+3组快捷键+kbd样式+framer-motion动画
+- PDF Export: generate-report-html.ts生成完整HTML报告（封面+摘要+评分分布+引擎对比+详细结果表+打印CSS）
+- Activity Timeline: 15条初始活动+8种类型+日期分隔+过滤器栏+Live指示灯+15秒自动添加新活动
+- 零lint错误，所有页面功能正常
+
+## 项目当前状态（第五轮Review后）
+
+### 已完成功能（累计 - 18大功能）
+1. **Dashboard** - 统计卡片（动画计数+趋势）+ 性能趋势图 + 引擎分布图 + 延迟分布图 + 结果表格 + 快捷操作 + 系统健康 + **GPU Cluster Monitor（3节点实时监控）** + **Activity Timeline（交互式时间线）** + 平台性能评分卡片
+2. **Model Management** - 完整CRUD + 搜索过滤 + 引擎/状态筛选 + 详情面板 + 多选对比模式
+3. **Parameter Tuning** - 4预设配置 + 手风琴参数表单 + 实时影响预估 + 配置CRUD
+4. **Benchmark Testing** - 5种场景 + 实时运行模拟 + 历史记录 + 详细结果 + **Benchmark Comparison（多选对比+15项指标对比表）**
+5. **Performance Reports** - 4种图表 + VLLM vs SGLang对比 + 可排序表格 + 评分分布 + **PDF导出** + CSV/JSON/剪贴板导出
+6. **Inflection Point Analysis** - 5维度分析 + 单/多模型图表 + 推荐 + 历史记录 + 参数灵敏度热力图
+7. **Backend API** - 11路由文件 + Dashboard统计 + 种子接口 + AI聊天API + 报告导出API
+8. **暗色主题** - next-themes + 侧边栏/Header双位置切换
+9. **AI助手** - 浮动聊天窗口 + z-ai-web-dev-sdk LLM + Markdown渲染
+10. **命令面板** - Cmd+K + 导航/操作/模型搜索
+11. **通知中心** - Popover通知列表 + 已读/未读
+12. **设置页面** - 5个设置分类 + localStorage + API连接测试
+13. **增强图表工具提示** - 7种专用tooltip + 点击高亮
+14. **性能评分系统** - A-F评分 + 加权综合 + Reports/Dashboard评分展示
+15. **模型对比** - 复选框多选 + 浮动底栏 + 雷达图/规格表/性能卡片
+16. **键盘快捷键** - 按?显示帮助 + ⌘1-7导航 + ⌘K命令面板
+17. **GPU实时监控** - 3节点SVG仪表盘 + 温度/内存/功耗 + 2秒刷新
+18. **活动时间线** - 8种活动类型 + 过滤器 + 实时模拟更新
+
+### 未解决问题或风险
+- Benchmark运行仍为客户端模拟，需对接实际推理引擎
+- 参数调优"实时影响预估"基于简单公式
+- 国际化（i18n）尚未实现
+- WebSocket实时通知尚未完全集成到前端
+
+### 下一阶段优先事项
+1. **国际化（i18n）**：使用next-intl实现中英文切换
+2. **用户认证**：使用NextAuth.js v4实现登录/权限控制
+3. **WebSocket实时推送**：集成benchmark-ws服务
+4. **参数调优增强**：拖拽参数滑块+实时图表预览
+5. **更多可视化**：雷达图、瀑布图等高级图表

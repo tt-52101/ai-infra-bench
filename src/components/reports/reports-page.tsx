@@ -21,7 +21,7 @@ import {
   TrendingUp, Clock, BarChart3, Download,
   ArrowUp, Activity, Search,
   ChevronDown, ChevronUp, Trophy, FileText, FileJson, Clipboard,
-  Loader2, AlertCircle, Scale, Cpu, HardDrive, Zap,
+  Loader2, AlertCircle, Scale, Cpu, HardDrive, Zap, FileDown,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -39,6 +39,7 @@ import type { EngineType, BenchmarkScenario, BenchmarkResultInfo, BenchmarkTaskI
 import { CustomChartTooltip, type TooltipEntry } from '@/components/ui/custom-chart-tooltip'
 import { EnhancedReportsThroughputTooltip, EnhancedScatterTooltip, EnhancedReportsLatencyTooltip, EnhancedReportsTtftTpotTooltip, useChartHighlight, HighlightCard } from '@/components/ui/enhanced-chart-tooltip'
 import { calculateScore, getGradeStyle, type ScoreBreakdown } from '@/lib/performance-score'
+import { generateReportHTML, fetchReportData, openReportPrintWindow } from '@/lib/generate-report-html'
 
 // ─── Color Constants ─────────────────────────────────────────────
 const VLLM_COLOR = '#10b981'   // emerald-500
@@ -553,6 +554,35 @@ export default function ReportsPage() {
     toast.success('Copied to clipboard', { description: `${filtered.length} records copied` })
   }
 
+  const exportAsPDF = async () => {
+    if (filtered.length === 0) {
+      toast.error('No data to export')
+      return
+    }
+    const loadingToast = toast.loading('Generating PDF report...')
+    try {
+      const data = await fetchReportData({
+        model: modelFilter,
+        engine: engineFilter,
+        scenario: scenarioFilter,
+      })
+      const html = generateReportHTML(data)
+      const printWindow = openReportPrintWindow(html)
+      if (!printWindow) {
+        toast.error('Popup blocked', { description: 'Please allow popups to generate the PDF report' })
+        return
+      }
+      toast.success('PDF report ready', {
+        description: 'Use "Save as PDF" in the print dialog to download',
+      })
+    } catch (err) {
+      console.error('PDF export error:', err)
+      toast.error('Failed to generate PDF', { description: 'An error occurred while generating the report' })
+    } finally {
+      toast.dismiss(loadingToast)
+    }
+  }
+
   // ─── Comparison Data ──────────────────────────────────────────
   const comparisonMetrics = [
     { name: 'Avg Throughput', vllm: vllmAvgThroughput, sglang: sglangAvgThroughput, unit: 'tok/s', higher: true },
@@ -802,6 +832,10 @@ export default function ReportsPage() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={exportAsPDF}>
+                <FileDown className="w-4 h-4" />
+                Export PDF
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={exportAsCSV}>
                 <FileText className="w-4 h-4" />
                 Export CSV
