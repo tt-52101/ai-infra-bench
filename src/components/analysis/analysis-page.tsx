@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect, useCallback } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   Legend, AreaChart, Area, ReferenceLine, ReferenceArea, ComposedChart, Bar,
@@ -18,25 +18,20 @@ import {
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, BarChart3,
   Cpu, HardDrive, Zap, Clock, ArrowUp, ArrowDown, Search, Download,
-  RefreshCw, Plus, Trash2, Eye, Activity, Target, Gauge,
+  RefreshCw, Plus, Trash2, Eye, Activity, Target, Gauge, Loader2,
 } from 'lucide-react'
-import type { EngineType } from '@/lib/types'
+import { toast } from 'sonner'
+import { useAnalyses, useModels } from '@/hooks/use-api'
+import type { EngineType, ModelInfo } from '@/lib/types'
 
 // ─── Color Constants ─────────────────────────────────────────────
 const VLLM_COLOR = '#10b981'
 const SGLANG_COLOR = '#f59e0b'
-const MODEL_COLORS: Record<string, string> = {
-  'Qwen2.5-72B': '#10b981',
-  'Llama-3.1-70B': '#f59e0b',
-  'DeepSeek-V2': '#ef4444',
-  'Mistral-7B': '#8b5cf6',
-  'Yi-1.5-34B': '#06b6d4',
-}
-
-const MODELS = ['Qwen2.5-72B', 'Llama-3.1-70B', 'DeepSeek-V2', 'Mistral-7B', 'Yi-1.5-34B']
+const COLOR_PALETTE = ['#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#14b8a6', '#f97316']
 
 // ─── Analysis Dimensions ─────────────────────────────────────────
 interface AnalysisDimension {
@@ -193,28 +188,6 @@ const INFLECTION_POINTS: Record<string, { vllm: number; sglang: number; optimalR
   inputlen_ttft: { vllm: 4096, sglang: 4096, optimalRange: [512, 4096], performanceGain: 12.3, riskLevel: 'Medium' },
 }
 
-// ─── Historical Analysis Data ────────────────────────────────────
-interface HistoricalAnalysis {
-  id: string
-  model: string
-  dimension: string
-  inflectionPoint: number
-  optimalValue: number
-  performanceGain: number
-  status: 'completed' | 'running' | 'failed'
-  createdAt: string
-}
-
-const HISTORICAL_ANALYSES: HistoricalAnalysis[] = [
-  { id: 'ha1', model: 'Qwen2.5-72B', dimension: 'Concurrency vs Throughput', inflectionPoint: 32, optimalValue: 2840, performanceGain: 23.5, status: 'completed', createdAt: '2025-01-20T10:00:00Z' },
-  { id: 'ha2', model: 'Llama-3.1-70B', dimension: 'Batch Size vs Latency', inflectionPoint: 16, optimalValue: 165, performanceGain: 18.2, status: 'completed', createdAt: '2025-01-19T15:30:00Z' },
-  { id: 'ha3', model: 'DeepSeek-V2', dimension: 'Seq Length vs Memory', inflectionPoint: 16384, optimalValue: 78, performanceGain: 0, status: 'completed', createdAt: '2025-01-18T09:00:00Z' },
-  { id: 'ha4', model: 'Mistral-7B', dimension: 'Input Length vs TTFT', inflectionPoint: 4096, optimalValue: 22, performanceGain: 12.3, status: 'completed', createdAt: '2025-01-17T14:00:00Z' },
-  { id: 'ha5', model: 'Yi-1.5-34B', dimension: 'GPU Mem Util vs Performance', inflectionPoint: 0.85, optimalValue: 4580, performanceGain: 15.8, status: 'completed', createdAt: '2025-01-16T11:30:00Z' },
-  { id: 'ha6', model: 'Qwen2.5-72B', dimension: 'Input Length vs TTFT', inflectionPoint: 4096, optimalValue: 85, performanceGain: 10.1, status: 'completed', createdAt: '2025-01-15T16:00:00Z' },
-  { id: 'ha7', model: 'Llama-3.1-70B', dimension: 'Concurrency vs Throughput', inflectionPoint: 64, optimalValue: 3100, performanceGain: 21.8, status: 'running', createdAt: '2025-01-21T08:00:00Z' },
-]
-
 // ─── Recommendations ─────────────────────────────────────────────
 function getRecommendations(dimension: string, selectedModel: string): Array<{ title: string; description: string; type: 'success' | 'warning' | 'danger' }> {
   const ip = INFLECTION_POINTS[dimension]
@@ -276,15 +249,67 @@ function AnalysisTooltip({ active, payload, label, yLabel }: { active?: boolean;
 // ─── Main Component ──────────────────────────────────────────────
 export default function AnalysisPage() {
   const [selectedDimension, setSelectedDimension] = useState('concurrency_throughput')
-  const [selectedModel, setSelectedModel] = useState('Qwen2.5-72B')
+  const [selectedModel, setSelectedModel] = useState('')
   const [showMultiModel, setShowMultiModel] = useState(false)
   const [selectedEngine, setSelectedEngine] = useState<EngineType | 'both'>('both')
+  const [creating, setCreating] = useState(false)
+
+  // API hooks
+  const { data: analyses, loading: analysesLoading, addAnalysis, removeAnalysis } = useAnalyses()
+  const { data: models, loading: modelsLoading } = useModels()
+
+  // Derived model data
+  const modelNames = useMemo(() => (models ?? []).map((m) => m.name), [models])
+  const modelMap = useMemo(() => {
+    const map: Record<string, ModelInfo> = {}
+    if (models) models.forEach((m) => { map[m.name] = m })
+    return map
+  }, [models])
+
+  // Dynamic model colors
+  const modelColors = useMemo(() => {
+    const colors: Record<string, string> = {}
+    modelNames.forEach((name, idx) => {
+      colors[name] = COLOR_PALETTE[idx % COLOR_PALETTE.length]
+    })
+    return colors
+  }, [modelNames])
+
+  // Set default selected model when models load
+  useEffect(() => {
+    if (modelNames.length > 0 && !modelNames.includes(selectedModel)) {
+      setSelectedModel(modelNames[0])
+    }
+  }, [modelNames, selectedModel])
+
+  // Map API analyses to display format for historical table
+  const historicalAnalyses = useMemo(() => {
+    if (!analyses || !models) return []
+    return analyses.map((a) => {
+      const model = models.find((m) => m.id === a.modelId)
+      const dim = DIMENSIONS.find((d) => d.key === a.dimension)
+      return {
+        id: a.id,
+        modelName: model?.name ?? 'Unknown',
+        dimensionLabel: dim?.label ?? a.dimension,
+        inflectionPoint: a.inflectionPoint,
+        optimalValue: a.optimalValue,
+        performanceGain: a.performanceGain,
+        status: a.status,
+        createdAt: a.createdAt,
+      }
+    })
+  }, [analyses, models])
+
+  // Find the currently selected model info
+  const currentModel = modelMap[selectedModel]
 
   const dimension = DIMENSIONS.find((d) => d.key === selectedDimension)!
   const inflectionInfo = INFLECTION_POINTS[selectedDimension]!
 
   // ─── Chart Data ───────────────────────────────────────────────
   const singleModelData = useMemo(() => {
+    if (!selectedModel) return []
     const vllmData = generateCurveData(selectedDimension, selectedModel, 'vllm')
     const sglangData = generateCurveData(selectedDimension, selectedModel, 'sglang')
 
@@ -298,21 +323,22 @@ export default function AnalysisPage() {
   }, [selectedDimension, selectedModel])
 
   const multiModelData = useMemo(() => {
+    if (modelNames.length === 0) return []
     const allData: Record<string, Array<{ x: number; y: number }>> = {}
-    MODELS.forEach((m) => {
+    modelNames.forEach((m) => {
       const engine = selectedEngine === 'both' ? 'vllm' : selectedEngine
       allData[m] = generateCurveData(selectedDimension, m, engine)
     })
 
     const maxLen = Math.max(...Object.values(allData).map((d) => d.length))
     return Array.from({ length: maxLen }, (_, i) => {
-      const entry: Record<string, number> = { x: allData[MODELS[0]][i]?.x ?? 0 }
-      MODELS.forEach((m) => {
+      const entry: Record<string, number> = { x: allData[modelNames[0]][i]?.x ?? 0 }
+      modelNames.forEach((m) => {
         entry[m] = allData[m][i]?.y ?? 0
       })
       return entry
     })
-  }, [selectedDimension, selectedEngine])
+  }, [selectedDimension, selectedEngine, modelNames])
 
   // ─── Inflection Point Reference ───────────────────────────────
   const inflectionX = selectedEngine === 'sglang' ? inflectionInfo.sglang : inflectionInfo.vllm
@@ -333,6 +359,105 @@ export default function AnalysisPage() {
     return value.toString()
   }
 
+  // ─── Handlers ─────────────────────────────────────────────────
+  const handleNewAnalysis = useCallback(async () => {
+    if (!currentModel) {
+      toast.error('Please select a model first')
+      return
+    }
+    setCreating(true)
+    try {
+      // Compute optimal value from curve data at inflection point
+      const engine = selectedEngine === 'both' ? 'vllm' : selectedEngine
+      const curveData = generateCurveData(selectedDimension, selectedModel, engine)
+      const inflectionIdx = curveData.findIndex((d) => d.x === inflectionX)
+      const optimalValue = inflectionIdx >= 0 ? curveData[inflectionIdx].y : 0
+
+      await addAnalysis({
+        modelId: currentModel.id,
+        engine: currentModel.engine,
+        dimension: selectedDimension,
+        inflectionPoint: inflectionX,
+        optimalValue,
+        performanceGain: inflectionInfo.performanceGain,
+        analysisJson: JSON.stringify({
+          dimension: selectedDimension,
+          model: selectedModel,
+          engine: currentModel.engine,
+          inflectionPoint: inflectionX,
+          optimalRange: inflectionInfo.optimalRange,
+          riskLevel: inflectionInfo.riskLevel,
+        }),
+        status: 'completed',
+      })
+      toast.success('Analysis created successfully')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create analysis')
+    } finally {
+      setCreating(false)
+    }
+  }, [currentModel, selectedDimension, selectedModel, selectedEngine, inflectionX, inflectionInfo, addAnalysis])
+
+  const handleDeleteAnalysis = useCallback(async (id: string) => {
+    try {
+      await removeAnalysis(id)
+      toast.success('Analysis deleted successfully')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete analysis')
+    }
+  }, [removeAnalysis])
+
+  const handleViewAnalysis = useCallback((analysisId: string) => {
+    if (!analyses || !models) return
+    const analysis = analyses.find((a) => a.id === analysisId)
+    if (!analysis) return
+    const model = models.find((m) => m.id === analysis.modelId)
+    if (model) setSelectedModel(model.name)
+    setSelectedDimension(analysis.dimension)
+    toast.info('Switched to analysis view')
+  }, [analyses, models])
+
+  const handleRerunAnalysis = useCallback(async (analysisId: string) => {
+    if (!analyses || !models) return
+    const analysis = analyses.find((a) => a.id === analysisId)
+    if (!analysis) return
+    const model = models.find((m) => m.id === analysis.modelId)
+    if (!model) return
+
+    setCreating(true)
+    try {
+      const dimInfo = INFLECTION_POINTS[analysis.dimension]
+      const engine = analysis.engine
+      const inflectionPt = engine === 'sglang' ? dimInfo?.sglang : dimInfo?.vllm ?? analysis.inflectionPoint
+      const curveData = generateCurveData(analysis.dimension, model.name, engine)
+      const inflectionIdx = curveData.findIndex((d) => d.x === inflectionPt)
+      const optimalValue = inflectionIdx >= 0 ? curveData[inflectionIdx].y : analysis.optimalValue
+
+      await addAnalysis({
+        modelId: model.id,
+        engine,
+        dimension: analysis.dimension,
+        inflectionPoint: inflectionPt,
+        optimalValue,
+        performanceGain: dimInfo?.performanceGain ?? analysis.performanceGain,
+        analysisJson: JSON.stringify({
+          dimension: analysis.dimension,
+          model: model.name,
+          engine,
+          inflectionPoint: inflectionPt,
+          optimalRange: dimInfo?.optimalRange,
+          riskLevel: dimInfo?.riskLevel,
+        }),
+        status: 'completed',
+      })
+      toast.success('Analysis rerun successfully')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to rerun analysis')
+    } finally {
+      setCreating(false)
+    }
+  }, [analyses, models, addAnalysis])
+
   return (
     <div className="space-y-6">
       {/* ─── Header ──────────────────────────────────────────── */}
@@ -344,16 +469,20 @@ export default function AnalysisPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Select value={selectedModel} onValueChange={setSelectedModel}>
-            <SelectTrigger className="w-[170px]">
-              <SelectValue placeholder="Select Model" />
-            </SelectTrigger>
-            <SelectContent>
-              {MODELS.map((m) => (
-                <SelectItem key={m} value={m}>{m}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {modelsLoading ? (
+            <Skeleton className="w-[170px] h-9" />
+          ) : (
+            <Select value={selectedModel} onValueChange={setSelectedModel}>
+              <SelectTrigger className="w-[170px]">
+                <SelectValue placeholder="Select Model" />
+              </SelectTrigger>
+              <SelectContent>
+                {modelNames.map((m) => (
+                  <SelectItem key={m} value={m}>{m}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <Select value={selectedEngine} onValueChange={(v) => setSelectedEngine(v as EngineType | 'both')}>
             <SelectTrigger className="w-[130px]">
               <SelectValue placeholder="Engine" />
@@ -364,8 +493,18 @@ export default function AnalysisPage() {
               <SelectItem value="sglang">SGLang</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" size="sm" className="gap-1.5">
-            <Plus className="w-4 h-4" />
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={handleNewAnalysis}
+            disabled={creating || !currentModel}
+          >
+            {creating ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Plus className="w-4 h-4" />
+            )}
             New Analysis
           </Button>
         </div>
@@ -467,87 +606,93 @@ export default function AnalysisPage() {
         <TabsContent value="single">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">{dimension.label} — {selectedModel}</CardTitle>
+              <CardTitle className="text-base">{dimension.label} — {selectedModel || 'Select a model'}</CardTitle>
               <CardDescription>
                 Inflection point marked at {selectedDimension === 'gpumem_performance' ? `${(inflectionX * 100).toFixed(0)}%` : inflectionX.toLocaleString()}. Shaded area shows optimal range.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="h-[450px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={singleModelData} margin={{ top: 10, right: 30, left: 20, bottom: 10 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis
-                      dataKey="x"
-                      tick={{ fontSize: 12 }}
-                      label={{ value: dimension.xLabel, position: 'insideBottom', offset: -5, style: { fontSize: 12 } }}
-                      tickFormatter={formatXAxis}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 12 }}
-                      label={{ value: dimension.yLabel, angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
-                    />
-                    <Tooltip content={<AnalysisTooltip yLabel={dimension.yLabel} />} />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                {selectedModel ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={singleModelData} margin={{ top: 10, right: 30, left: 20, bottom: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                      <XAxis
+                        dataKey="x"
+                        tick={{ fontSize: 12 }}
+                        label={{ value: dimension.xLabel, position: 'insideBottom', offset: -5, style: { fontSize: 12 } }}
+                        tickFormatter={formatXAxis}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 12 }}
+                        label={{ value: dimension.yLabel, angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
+                      />
+                      <Tooltip content={<AnalysisTooltip yLabel={dimension.yLabel} />} />
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
 
-                    {/* Optimal Zone Shading */}
-                    <ReferenceArea
-                      x1={optimalStart}
-                      x2={optimalEnd}
-                      fill="#10b981"
-                      fillOpacity={0.08}
-                      stroke="#10b981"
-                      strokeOpacity={0.2}
-                    />
+                      {/* Optimal Zone Shading */}
+                      <ReferenceArea
+                        x1={optimalStart}
+                        x2={optimalEnd}
+                        fill="#10b981"
+                        fillOpacity={0.08}
+                        stroke="#10b981"
+                        strokeOpacity={0.2}
+                      />
 
-                    {/* Inflection Point Line */}
-                    <ReferenceLine
-                      x={inflectionX}
-                      stroke="#ef4444"
-                      strokeDasharray="6 4"
-                      strokeWidth={2}
-                      label={{
-                        value: `Inflection: ${selectedDimension === 'gpumem_performance' ? `${(inflectionX * 100).toFixed(0)}%` : inflectionX.toLocaleString()}`,
-                        position: 'top',
-                        fill: '#ef4444',
-                        fontSize: 12,
-                        fontWeight: 600,
-                      }}
-                    />
-
-                    {/* GPU Capacity Line for memory dimension */}
-                    {selectedDimension === 'seqlen_memory' && (
+                      {/* Inflection Point Line */}
                       <ReferenceLine
-                        y={80}
+                        x={inflectionX}
                         stroke="#ef4444"
-                        strokeDasharray="4 4"
-                        strokeWidth={1.5}
-                        label={{ value: 'GPU Limit (80GB)', position: 'right', fill: '#ef4444', fontSize: 11 }}
+                        strokeDasharray="6 4"
+                        strokeWidth={2}
+                        label={{
+                          value: `Inflection: ${selectedDimension === 'gpumem_performance' ? `${(inflectionX * 100).toFixed(0)}%` : inflectionX.toLocaleString()}`,
+                          position: 'top',
+                          fill: '#ef4444',
+                          fontSize: 12,
+                          fontWeight: 600,
+                        }}
                       />
-                    )}
 
-                    {(selectedEngine === 'both' || selectedEngine === 'vllm') && (
-                      <Line
-                        type="monotone"
-                        dataKey="VLLM"
-                        stroke={VLLM_COLOR}
-                        strokeWidth={2.5}
-                        dot={{ r: 4, fill: VLLM_COLOR, strokeWidth: 2, stroke: '#fff' }}
-                        activeDot={{ r: 6 }}
-                      />
-                    )}
-                    {(selectedEngine === 'both' || selectedEngine === 'sglang') && (
-                      <Line
-                        type="monotone"
-                        dataKey="SGLang"
-                        stroke={SGLANG_COLOR}
-                        strokeWidth={2.5}
-                        dot={{ r: 4, fill: SGLANG_COLOR, strokeWidth: 2, stroke: '#fff' }}
-                        activeDot={{ r: 6 }}
-                      />
-                    )}
-                  </ComposedChart>
-                </ResponsiveContainer>
+                      {/* GPU Capacity Line for memory dimension */}
+                      {selectedDimension === 'seqlen_memory' && (
+                        <ReferenceLine
+                          y={80}
+                          stroke="#ef4444"
+                          strokeDasharray="4 4"
+                          strokeWidth={1.5}
+                          label={{ value: 'GPU Limit (80GB)', position: 'right', fill: '#ef4444', fontSize: 11 }}
+                        />
+                      )}
+
+                      {(selectedEngine === 'both' || selectedEngine === 'vllm') && (
+                        <Line
+                          type="monotone"
+                          dataKey="VLLM"
+                          stroke={VLLM_COLOR}
+                          strokeWidth={2.5}
+                          dot={{ r: 4, fill: VLLM_COLOR, strokeWidth: 2, stroke: '#fff' }}
+                          activeDot={{ r: 6 }}
+                        />
+                      )}
+                      {(selectedEngine === 'both' || selectedEngine === 'sglang') && (
+                        <Line
+                          type="monotone"
+                          dataKey="SGLang"
+                          stroke={SGLANG_COLOR}
+                          strokeWidth={2.5}
+                          dot={{ r: 4, fill: SGLANG_COLOR, strokeWidth: 2, stroke: '#fff' }}
+                          activeDot={{ r: 6 }}
+                        />
+                      )}
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-muted-foreground">
+                    <p>Select a model to view analysis chart</p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -564,59 +709,65 @@ export default function AnalysisPage() {
             </CardHeader>
             <CardContent>
               <div className="h-[450px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={multiModelData} margin={{ top: 10, right: 30, left: 20, bottom: 10 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis
-                      dataKey="x"
-                      tick={{ fontSize: 12 }}
-                      label={{ value: dimension.xLabel, position: 'insideBottom', offset: -5, style: { fontSize: 12 } }}
-                      tickFormatter={formatXAxis}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 12 }}
-                      label={{ value: dimension.yLabel, angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
-                    />
-                    <Tooltip content={<AnalysisTooltip yLabel={dimension.yLabel} />} />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                {modelNames.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={multiModelData} margin={{ top: 10, right: 30, left: 20, bottom: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                      <XAxis
+                        dataKey="x"
+                        tick={{ fontSize: 12 }}
+                        label={{ value: dimension.xLabel, position: 'insideBottom', offset: -5, style: { fontSize: 12 } }}
+                        tickFormatter={formatXAxis}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 12 }}
+                        label={{ value: dimension.yLabel, angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
+                      />
+                      <Tooltip content={<AnalysisTooltip yLabel={dimension.yLabel} />} />
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
 
-                    {/* Inflection Point Line */}
-                    <ReferenceLine
-                      x={inflectionX}
-                      stroke="#ef4444"
-                      strokeDasharray="6 4"
-                      strokeWidth={2}
-                      label={{
-                        value: 'Inflection',
-                        position: 'top',
-                        fill: '#ef4444',
-                        fontSize: 12,
-                        fontWeight: 600,
-                      }}
-                    />
-
-                    {selectedDimension === 'seqlen_memory' && (
+                      {/* Inflection Point Line */}
                       <ReferenceLine
-                        y={80}
+                        x={inflectionX}
                         stroke="#ef4444"
-                        strokeDasharray="4 4"
-                        strokeWidth={1.5}
-                        label={{ value: 'GPU Limit', position: 'right', fill: '#ef4444', fontSize: 11 }}
-                      />
-                    )}
-
-                    {MODELS.map((m) => (
-                      <Line
-                        key={m}
-                        type="monotone"
-                        dataKey={m}
-                        stroke={MODEL_COLORS[m]}
+                        strokeDasharray="6 4"
                         strokeWidth={2}
-                        dot={{ r: 3, fill: MODEL_COLORS[m], strokeWidth: 1.5, stroke: '#fff' }}
+                        label={{
+                          value: 'Inflection',
+                          position: 'top',
+                          fill: '#ef4444',
+                          fontSize: 12,
+                          fontWeight: 600,
+                        }}
                       />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
+
+                      {selectedDimension === 'seqlen_memory' && (
+                        <ReferenceLine
+                          y={80}
+                          stroke="#ef4444"
+                          strokeDasharray="4 4"
+                          strokeWidth={1.5}
+                          label={{ value: 'GPU Limit', position: 'right', fill: '#ef4444', fontSize: 11 }}
+                        />
+                      )}
+
+                      {modelNames.map((m) => (
+                        <Line
+                          key={m}
+                          type="monotone"
+                          dataKey={m}
+                          stroke={modelColors[m]}
+                          strokeWidth={2}
+                          dot={{ r: 3, fill: modelColors[m], strokeWidth: 1.5, stroke: '#fff' }}
+                        />
+                      ))}
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-muted-foreground">
+                    <p>No models available for comparison</p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -630,7 +781,7 @@ export default function AnalysisPage() {
             <CheckCircle2 className="w-5 h-5 text-emerald-500" />
             Recommendations
           </CardTitle>
-          <CardDescription>Auto-generated insights based on inflection point analysis for {selectedModel}</CardDescription>
+          <CardDescription>Auto-generated insights based on inflection point analysis for {selectedModel || 'selected model'}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -681,46 +832,83 @@ export default function AnalysisPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {HISTORICAL_ANALYSES.map((ha) => (
-                  <TableRow key={ha.id}>
-                    <TableCell className="font-medium text-sm">{ha.model}</TableCell>
-                    <TableCell className="text-sm">{ha.dimension}</TableCell>
-                    <TableCell className="font-mono text-sm">{typeof ha.inflectionPoint === 'number' && ha.inflectionPoint < 1 ? `${(ha.inflectionPoint * 100).toFixed(0)}%` : ha.inflectionPoint.toLocaleString()}</TableCell>
-                    <TableCell className="font-mono text-sm">{ha.optimalValue.toLocaleString()}</TableCell>
-                    <TableCell className="font-mono text-sm">
-                      {ha.performanceGain > 0 ? (
-                        <span className="text-emerald-600 flex items-center gap-0.5">
-                          <ArrowUp className="w-3 h-3" />+{ha.performanceGain}%
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">N/A</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={ha.status === 'completed' ? 'default' : ha.status === 'running' ? 'secondary' : 'destructive'}
-                        className="text-xs"
-                      >
-                        {ha.status === 'running' && <RefreshCw className="w-3 h-3 mr-1 animate-spin" />}
-                        {ha.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{new Date(ha.createdAt).toLocaleDateString()}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="sm" className="h-7 px-2">
-                          <Eye className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-7 px-2">
-                          <RefreshCw className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-7 px-2 text-red-500 hover:text-red-700">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
+                {analysesLoading ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <TableRow key={i}>
+                      <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-36" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-20 ml-auto" /></TableCell>
+                    </TableRow>
+                  ))
+                ) : historicalAnalyses.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                      No analyses found. Click &quot;New Analysis&quot; to create one.
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : (
+                  historicalAnalyses.map((ha) => (
+                    <TableRow key={ha.id}>
+                      <TableCell className="font-medium text-sm">{ha.modelName}</TableCell>
+                      <TableCell className="text-sm">{ha.dimensionLabel}</TableCell>
+                      <TableCell className="font-mono text-sm">{typeof ha.inflectionPoint === 'number' && ha.inflectionPoint < 1 ? `${(ha.inflectionPoint * 100).toFixed(0)}%` : ha.inflectionPoint.toLocaleString()}</TableCell>
+                      <TableCell className="font-mono text-sm">{ha.optimalValue.toLocaleString()}</TableCell>
+                      <TableCell className="font-mono text-sm">
+                        {ha.performanceGain > 0 ? (
+                          <span className="text-emerald-600 flex items-center gap-0.5">
+                            <ArrowUp className="w-3 h-3" />+{ha.performanceGain}%
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">N/A</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={ha.status === 'completed' ? 'default' : ha.status === 'running' ? 'secondary' : 'destructive'}
+                          className="text-xs"
+                        >
+                          {ha.status === 'running' && <RefreshCw className="w-3 h-3 mr-1 animate-spin" />}
+                          {ha.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{new Date(ha.createdAt).toLocaleDateString()}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2"
+                            onClick={() => handleViewAnalysis(ha.id)}
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2"
+                            onClick={() => handleRerunAnalysis(ha.id)}
+                            disabled={creating}
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-red-500 hover:text-red-700"
+                            onClick={() => handleDeleteAnalysis(ha.id)}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </div>

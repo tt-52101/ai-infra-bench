@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { v4 as uuidv4 } from 'uuid'
 import { toast } from 'sonner'
 import {
   Box,
@@ -19,20 +18,20 @@ import {
   Server,
   X,
   Check,
-  ChevronRight,
   Layers,
   Gauge,
   FolderOpen,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react'
 
-import { useAppStore } from '@/lib/store'
+import { useModels } from '@/hooks/use-api'
 import type { ModelInfo, EngineType, ModelStatus } from '@/lib/types'
 
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardAction } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog,
@@ -41,7 +40,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
 import {
   AlertDialog,
@@ -69,7 +67,6 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
-import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
@@ -81,96 +78,6 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
-
-// ─── Mock Data ────────────────────────────────────────────────────────────────
-
-const MOCK_MODELS: ModelInfo[] = [
-  {
-    id: 'model-1',
-    name: 'Qwen2.5-72B-Instruct',
-    engine: 'vllm',
-    modelPath: '/data/models/Qwen2.5-72B-Instruct',
-    version: '1.0.0',
-    status: 'active',
-    description: 'Qwen2.5 72B parameter instruction-tuned model for advanced text generation and reasoning tasks.',
-    gpuType: 'A100-80G',
-    gpuCount: 8,
-    maxSeqLen: 32768,
-    dtype: 'bfloat16',
-    tensorParallelSize: 8,
-    pipelineParallelSize: 1,
-    createdAt: '2024-12-15T08:30:00Z',
-    updatedAt: '2025-01-20T14:22:00Z',
-  },
-  {
-    id: 'model-2',
-    name: 'Llama-3.1-70B-Instruct',
-    engine: 'sglang',
-    modelPath: '/data/models/Meta-Llama-3.1-70B-Instruct',
-    version: '3.1.0',
-    status: 'active',
-    description: 'Meta Llama 3.1 70B instruction-tuned model optimized for SGLang runtime.',
-    gpuType: 'H100-80G',
-    gpuCount: 4,
-    maxSeqLen: 131072,
-    dtype: 'bfloat16',
-    tensorParallelSize: 4,
-    pipelineParallelSize: 1,
-    createdAt: '2024-11-20T10:00:00Z',
-    updatedAt: '2025-02-05T09:15:00Z',
-  },
-  {
-    id: 'model-3',
-    name: 'DeepSeek-V2-Chat',
-    engine: 'vllm',
-    modelPath: '/data/models/deepseek-llm/deepseek-v2-chat',
-    version: '2.0.0',
-    status: 'error',
-    description: 'DeepSeek V2 Chat model with MoE architecture. Currently experiencing GPU memory errors.',
-    gpuType: 'A800-80G',
-    gpuCount: 8,
-    maxSeqLen: 16384,
-    dtype: 'bfloat16',
-    tensorParallelSize: 8,
-    pipelineParallelSize: 1,
-    createdAt: '2025-01-10T12:00:00Z',
-    updatedAt: '2025-03-01T16:45:00Z',
-  },
-  {
-    id: 'model-4',
-    name: 'Mistral-7B-Instruct',
-    engine: 'sglang',
-    modelPath: '/data/models/mistral-7b-instruct-v0.3',
-    version: '0.3.0',
-    status: 'active',
-    description: 'Mistral 7B instruction-tuned model, lightweight and efficient for single-GPU deployment.',
-    gpuType: 'L40S',
-    gpuCount: 1,
-    maxSeqLen: 32768,
-    dtype: 'float16',
-    tensorParallelSize: 1,
-    pipelineParallelSize: 1,
-    createdAt: '2025-02-01T09:30:00Z',
-    updatedAt: '2025-02-28T11:00:00Z',
-  },
-  {
-    id: 'model-5',
-    name: 'Yi-1.5-34B-Chat',
-    engine: 'vllm',
-    modelPath: '/data/models/01-ai/Yi-1.5-34B-Chat',
-    version: '1.5.0',
-    status: 'inactive',
-    description: 'Yi 1.5 34B Chat model. Currently offline for maintenance and parameter tuning.',
-    gpuType: 'A100-40G',
-    gpuCount: 4,
-    maxSeqLen: 4096,
-    dtype: 'bfloat16',
-    tensorParallelSize: 4,
-    pipelineParallelSize: 1,
-    createdAt: '2024-10-05T14:00:00Z',
-    updatedAt: '2025-01-15T10:30:00Z',
-  },
-]
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -199,6 +106,49 @@ const modelFormSchema = z.object({
 })
 
 type ModelFormValues = z.infer<typeof modelFormSchema>
+
+// ─── Loading Skeleton ─────────────────────────────────────────────────────────
+
+function SkeletonModelCard() {
+  return (
+    <Card className="py-0 gap-0">
+      <CardHeader className="pb-3 pt-5 px-5">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0 space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="h-5 w-40 bg-muted animate-pulse rounded" />
+              <div className="h-5 w-14 bg-muted animate-pulse rounded" />
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="h-3 w-16 bg-muted animate-pulse rounded" />
+              <div className="h-3 w-12 bg-muted animate-pulse rounded" />
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="size-8 bg-muted animate-pulse rounded" />
+            <div className="size-8 bg-muted animate-pulse rounded" />
+            <div className="size-8 bg-muted animate-pulse rounded" />
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="px-5 pb-4 pt-0 space-y-3">
+        <div className="h-4 w-full bg-muted animate-pulse rounded" />
+        <div className="h-px bg-muted" />
+        <div className="grid grid-cols-2 gap-2">
+          <div className="h-4 w-24 bg-muted animate-pulse rounded" />
+          <div className="h-4 w-20 bg-muted animate-pulse rounded" />
+          <div className="h-4 w-24 bg-muted animate-pulse rounded" />
+          <div className="h-4 w-20 bg-muted animate-pulse rounded" />
+        </div>
+        <div className="h-px bg-muted" />
+        <div className="flex justify-between">
+          <div className="h-3 w-20 bg-muted animate-pulse rounded" />
+          <div className="h-3 w-32 bg-muted animate-pulse rounded" />
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
 
 // ─── Helper Components ────────────────────────────────────────────────────────
 
@@ -379,13 +329,17 @@ function ModelFormDialog({
   open,
   onOpenChange,
   editingModel,
+  onAddModel,
+  onEditModel,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   editingModel: ModelInfo | null
+  onAddModel: (data: Omit<ModelInfo, 'id' | 'createdAt' | 'updatedAt'>) => Promise<ModelInfo>
+  onEditModel: (id: string, data: Partial<ModelInfo>) => Promise<ModelInfo>
 }) {
-  const { addModel, updateModel } = useAppStore()
   const isEditing = !!editingModel
+  const [submitting, setSubmitting] = useState(false)
 
   const form = useForm<ModelFormValues>({
     resolver: zodResolver(modelFormSchema),
@@ -443,27 +397,26 @@ function ModelFormDialog({
   }, [open, editingModel, form])
 
   const onSubmit = useCallback(
-    (values: ModelFormValues) => {
-      const now = new Date().toISOString()
-      if (isEditing && editingModel) {
-        updateModel(editingModel.id, {
-          ...values,
-          updatedAt: now,
-        })
-        toast.success('Model updated', { description: `${values.name} has been updated successfully.` })
-      } else {
-        const newModel: ModelInfo = {
-          id: uuidv4(),
-          ...values,
-          createdAt: now,
-          updatedAt: now,
+    async (values: ModelFormValues) => {
+      setSubmitting(true)
+      try {
+        if (isEditing && editingModel) {
+          await onEditModel(editingModel.id, values)
+          toast.success('Model updated', { description: `${values.name} has been updated successfully.` })
+        } else {
+          await onAddModel(values)
+          toast.success('Model created', { description: `${values.name} has been added successfully.` })
         }
-        addModel(newModel)
-        toast.success('Model created', { description: `${values.name} has been added successfully.` })
+        onOpenChange(false)
+      } catch (err) {
+        toast.error(isEditing ? 'Failed to update model' : 'Failed to create model', {
+          description: err instanceof Error ? err.message : 'An unexpected error occurred.',
+        })
+      } finally {
+        setSubmitting(false)
       }
-      onOpenChange(false)
     },
-    [isEditing, editingModel, updateModel, addModel, onOpenChange]
+    [isEditing, editingModel, onAddModel, onEditModel, onOpenChange]
   )
 
   return (
@@ -751,11 +704,16 @@ function ModelFormDialog({
         </ScrollArea>
 
         <DialogFooter className="px-6 pb-6 pt-3 border-t">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
             Cancel
           </Button>
-          <Button type="submit" form="model-form">
-            {isEditing ? (
+          <Button type="submit" form="model-form" disabled={submitting}>
+            {submitting ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                {isEditing ? 'Updating...' : 'Creating...'}
+              </>
+            ) : isEditing ? (
               <>
                 <Check className="size-4" />
                 Update Model
@@ -856,14 +814,7 @@ function ModelDetailSheet({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function ModelsPage() {
-  const { models, setModels, removeModel } = useAppStore()
-
-  // Initialize mock data if store is empty
-  useEffect(() => {
-    if (models.length === 0) {
-      setModels(MOCK_MODELS)
-    }
-  }, [models.length, setModels])
+  const { data: models, loading, error, addModel, editModel, removeModel } = useModels()
 
   // State
   const [searchQuery, setSearchQuery] = useState('')
@@ -875,10 +826,14 @@ export default function ModelsPage() {
   const [detailSheetOpen, setDetailSheetOpen] = useState(false)
   const [deleteModel, setDeleteModel] = useState<ModelInfo | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  // Use API data or empty array as fallback
+  const modelsList = models ?? []
 
   // Filtered models
   const filteredModels = useMemo(() => {
-    return models.filter((model) => {
+    return modelsList.filter((model) => {
       const matchesSearch =
         searchQuery === '' ||
         model.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -888,7 +843,7 @@ export default function ModelsPage() {
       const matchesStatus = statusFilter === 'all' || model.status === statusFilter
       return matchesSearch && matchesEngine && matchesStatus
     })
-  }, [models, searchQuery, engineFilter, statusFilter])
+  }, [modelsList, searchQuery, engineFilter, statusFilter])
 
   // Handlers
   const handleAdd = useCallback(() => {
@@ -906,13 +861,22 @@ export default function ModelsPage() {
     setDeleteDialogOpen(true)
   }, [])
 
-  const confirmDelete = useCallback(() => {
+  const confirmDelete = useCallback(async () => {
     if (deleteModel) {
-      removeModel(deleteModel.id)
-      toast.success('Model deleted', { description: `${deleteModel.name} has been removed.` })
+      setDeleting(true)
+      try {
+        await removeModel(deleteModel.id)
+        toast.success('Model deleted', { description: `${deleteModel.name} has been removed.` })
+      } catch (err) {
+        toast.error('Failed to delete model', {
+          description: err instanceof Error ? err.message : 'An unexpected error occurred.',
+        })
+      } finally {
+        setDeleting(false)
+        setDeleteDialogOpen(false)
+        setDeleteModel(null)
+      }
     }
-    setDeleteDialogOpen(false)
-    setDeleteModel(null)
   }, [deleteModel, removeModel])
 
   const handleViewDetails = useCallback((model: ModelInfo) => {
@@ -922,14 +886,12 @@ export default function ModelsPage() {
 
   // Stats
   const modelStats = useMemo(() => {
-    const total = models.length
-    const active = models.filter((m) => m.status === 'active').length
-    const inactive = models.filter((m) => m.status === 'inactive').length
-    const error = models.filter((m) => m.status === 'error').length
-    const vllm = models.filter((m) => m.engine === 'vllm').length
-    const sglang = models.filter((m) => m.engine === 'sglang').length
-    return { total, active, inactive, error, vllm, sglang }
-  }, [models])
+    const total = modelsList.length
+    const active = modelsList.filter((m) => m.status === 'active').length
+    const vllm = modelsList.filter((m) => m.engine === 'vllm').length
+    const sglang = modelsList.filter((m) => m.engine === 'sglang').length
+    return { total, active, vllm, sglang }
+  }, [modelsList])
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6 max-w-[1600px] mx-auto w-full">
@@ -951,10 +913,10 @@ export default function ModelsPage() {
         {/* Stats Row */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: 'Total Models', value: modelStats.total, color: '' },
-            { label: 'Active', value: modelStats.active, color: 'text-emerald-600 dark:text-emerald-400' },
-            { label: 'VLLM', value: modelStats.vllm, color: 'text-emerald-600 dark:text-emerald-400' },
-            { label: 'SGLang', value: modelStats.sglang, color: 'text-amber-600 dark:text-amber-400' },
+            { label: 'Total Models', value: loading ? '—' : modelStats.total, color: '' },
+            { label: 'Active', value: loading ? '—' : modelStats.active, color: 'text-emerald-600 dark:text-emerald-400' },
+            { label: 'VLLM', value: loading ? '—' : modelStats.vllm, color: 'text-emerald-600 dark:text-emerald-400' },
+            { label: 'SGLang', value: loading ? '—' : modelStats.sglang, color: 'text-amber-600 dark:text-amber-400' },
           ].map((stat) => (
             <div key={stat.label} className="rounded-lg border bg-card p-3 text-center">
               <div className={`text-2xl font-bold ${stat.color}`}>{stat.value}</div>
@@ -963,6 +925,14 @@ export default function ModelsPage() {
           ))}
         </div>
       </div>
+
+      {/* Error State */}
+      {error && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/5 p-4 text-sm text-destructive">
+          <AlertCircle className="size-4 shrink-0" />
+          <span>Failed to load models: {error}</span>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
@@ -1008,7 +978,13 @@ export default function ModelsPage() {
       </div>
 
       {/* Model Cards Grid */}
-      {filteredModels.length === 0 ? (
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <SkeletonModelCard key={i} />
+          ))}
+        </div>
+      ) : filteredModels.length === 0 ? (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -1051,6 +1027,8 @@ export default function ModelsPage() {
         open={formDialogOpen}
         onOpenChange={setFormDialogOpen}
         editingModel={editingModel}
+        onAddModel={addModel}
+        onEditModel={editModel}
       />
 
       {/* Detail Sheet */}
@@ -1071,9 +1049,16 @@ export default function ModelsPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setDeleteModel(null)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-white hover:bg-destructive/90">
-              Delete
+            <AlertDialogCancel onClick={() => setDeleteModel(null)} disabled={deleting}>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-white hover:bg-destructive/90" disabled={deleting}>
+              {deleting ? (
+                <>
+                  <Loader2 className="size-4 animate-spin mr-1" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete'
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -1,26 +1,36 @@
----
-Task ID: 5
-Agent: full-stack-developer
-Task: Build model management module
+# Task 5 - Update Benchmark Page to Use Real API Data
 
-Work Log:
-- Read existing project structure, types (ModelInfo, EngineType, ModelStatus), and Zustand store (models, addModel, updateModel, removeModel, setModels)
-- Reviewed all available shadcn/ui components (card, dialog, badge, form, select, tabs, sheet, alert-dialog, switch, tooltip, scroll-area, separator, input, textarea, button, etc.)
-- Checked zod v4 and @hookform/resolvers v5 compatibility
-- Created /home/z/my-project/src/components/models/models-page.tsx with complete model management module
-- Verified code quality with ESLint (0 errors, 0 warnings)
-- Checked dev server log (no compilation errors)
+## Agent: full-stack-developer
 
-Stage Summary:
-- Delivered complete Model Management page component with:
-  1. Header section with title, subtitle, and "Add Model" button
-  2. Stats row showing Total, Active, VLLM, and SGLang counts
-  3. Search/filter bar with text search, engine type tabs (All/VLLM/SGLang), and status filter dropdown
-  4. Responsive model cards grid (1/2/3 columns) with engine badges (emerald for VLLM, amber for SGLang), status dots, specs, parallel info, truncated path with tooltip, and action buttons (View/Edit/Delete)
-  5. Add/Edit Model Dialog with three form sections (Basic Info, Hardware Config, Model Config) using react-hook-form + zod validation
-  6. Model Detail Sheet (side panel) showing full model configuration
-  7. Delete Confirmation AlertDialog
-  8. 5 mock models with realistic data (Qwen2.5-72B, Llama-3.1-70B, DeepSeek-V2, Mistral-7B, Yi-1.5-34B)
-  9. Framer Motion animations for card enter/exit
-  10. Empty state with contextual messaging
-  11. Toast notifications via sonner for CRUD operations
+## Summary
+Updated the Benchmark page (`src/components/benchmark/benchmark-page.tsx`) to use real API data via hooks from `@/hooks/use-api` instead of hardcoded mock data and Zustand store.
+
+## Key Changes
+
+### Data Source Migration
+- **Before**: Mock data (MOCK_MODELS, MOCK_PROFILES, MOCK_TASKS, MOCK_RESULTS) initialized via Zustand store
+- **After**: Real API data via `useBenchmarks()`, `useResults()`, `useModels()`, `useProfiles()` hooks
+
+### API Operations
+- **Create benchmark**: `addBenchmark()` API → `editBenchmark()` to set status='running' → client-side simulation → `editBenchmark()` to set completed + `addResult()` to save result
+- **Delete benchmark**: `removeBenchmark()` API
+- **Duplicate benchmark**: `addBenchmark()` API with copied task data
+- **Stop benchmark**: `editBenchmark()` to set status='failed'
+
+### Type Mapping
+- API returns benchmarks with nested `model`, `profile`, `results` objects
+- Created `BenchmarkWithRelations` interface and `mapBenchmarkTask()` function to flatten to `BenchmarkTaskInfo`
+
+### Simulation Mechanism
+- Running benchmark simulation stays client-side (no real inference engine)
+- Uses local `runningProgress` state instead of updating server every 200ms
+- Uses `throughputHistoryRef` (useRef) to avoid stale closure issues in setInterval
+- On completion: persists result and status via API calls
+
+### UI Enhancements
+- Loading skeleton (`TableSkeleton`) shown during data fetching
+- Toast notifications (sonner) for all async operation success/error
+- JSON.parse safety with try/catch for detailJson
+
+## Lint Result
+- 0 errors, 1 pre-existing warning in use-api.ts (not in benchmark code)

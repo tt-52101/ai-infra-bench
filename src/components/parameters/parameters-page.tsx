@@ -19,9 +19,11 @@ import {
   Plus,
   RotateCcw,
   Edit3,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react'
-import type { EngineType, ParameterProfileInfo, ModelInfo } from '@/lib/types'
-import { useAppStore } from '@/lib/store'
+import type { EngineType, ParameterProfileInfo } from '@/lib/types'
+import { useProfiles, useModels } from '@/hooks/use-api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
@@ -39,6 +41,7 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Skeleton } from '@/components/ui/skeleton'
 
 // ─── Parameter Tooltips ────────────────────────────────────────────────────
 const PARAM_TOOLTIPS: Record<string, string> = {
@@ -59,78 +62,6 @@ const PARAM_TOOLTIPS: Record<string, string> = {
   topK: 'Only sample from the top K most likely tokens. -1 = disabled (all tokens considered).',
   repetitionPenalty: 'Penalizes repeated tokens. 1.0 = no penalty, higher = stronger penalty for repetition.',
 }
-
-// ─── Mock Models ────────────────────────────────────────────────────────────
-const MOCK_MODELS: ModelInfo[] = [
-  {
-    id: 'model-1',
-    name: 'LLaMA-3-70B',
-    engine: 'vllm',
-    modelPath: '/models/llama3-70b',
-    version: '1.0',
-    status: 'active',
-    description: 'LLaMA 3 70B parameter model',
-    gpuType: 'A100',
-    gpuCount: 4,
-    maxSeqLen: 8192,
-    dtype: 'bfloat16',
-    tensorParallelSize: 4,
-    pipelineParallelSize: 1,
-    createdAt: '2024-01-15T10:00:00Z',
-    updatedAt: '2024-01-15T10:00:00Z',
-  },
-  {
-    id: 'model-2',
-    name: 'Mistral-7B-Instruct',
-    engine: 'sglang',
-    modelPath: '/models/mistral-7b-instruct',
-    version: '1.0',
-    status: 'active',
-    description: 'Mistral 7B Instruct model',
-    gpuType: 'A100',
-    gpuCount: 1,
-    maxSeqLen: 32768,
-    dtype: 'bfloat16',
-    tensorParallelSize: 1,
-    pipelineParallelSize: 1,
-    createdAt: '2024-02-01T10:00:00Z',
-    updatedAt: '2024-02-01T10:00:00Z',
-  },
-  {
-    id: 'model-3',
-    name: 'Qwen2-72B-Chat',
-    engine: 'vllm',
-    modelPath: '/models/qwen2-72b-chat',
-    version: '1.0',
-    status: 'active',
-    description: 'Qwen2 72B Chat model',
-    gpuType: 'H100',
-    gpuCount: 2,
-    maxSeqLen: 32768,
-    dtype: 'bfloat16',
-    tensorParallelSize: 2,
-    pipelineParallelSize: 1,
-    createdAt: '2024-03-01T10:00:00Z',
-    updatedAt: '2024-03-01T10:00:00Z',
-  },
-  {
-    id: 'model-4',
-    name: 'DeepSeek-V2-Lite',
-    engine: 'sglang',
-    modelPath: '/models/deepseek-v2-lite',
-    version: '1.0',
-    status: 'inactive',
-    description: 'DeepSeek V2 Lite model',
-    gpuType: 'A6000',
-    gpuCount: 1,
-    maxSeqLen: 16384,
-    dtype: 'bfloat16',
-    tensorParallelSize: 1,
-    pipelineParallelSize: 1,
-    createdAt: '2024-04-01T10:00:00Z',
-    updatedAt: '2024-04-01T10:00:00Z',
-  },
-]
 
 // ─── Default Parameter Values ───────────────────────────────────────────────
 interface ParameterValues {
@@ -256,91 +187,6 @@ const PRESET_PROFILES: (ParameterValues & { name: string; description: string; h
     topP: 1.0,
     topK: -1,
     repetitionPenalty: 1.0,
-  },
-]
-
-// ─── Initial saved profiles ────────────────────────────────────────────────
-const INITIAL_SAVED_PROFILES: ParameterProfileInfo[] = [
-  {
-    id: 'profile-saved-1',
-    name: 'Production Config',
-    modelId: 'model-1',
-    engine: 'vllm',
-    maxModelLen: 8192,
-    gpuMemoryUtil: 0.92,
-    maxNumSeqs: 256,
-    maxNumBatchedTokens: 16384,
-    swapSpace: 4,
-    blockSize: 16,
-    quantization: 'none',
-    enforceEager: false,
-    enablePrefixCaching: true,
-    enableChunkedPrefill: true,
-    memFractionStatic: 0.88,
-    chunkPrefillSize: 8192,
-    temperature: 0.7,
-    topP: 0.9,
-    topK: -1,
-    repetitionPenalty: 1.0,
-    isPreset: false,
-    description: 'Production configuration for LLaMA-3-70B serving.',
-    createdAt: '2024-06-10T08:00:00Z',
-    updatedAt: '2024-06-12T14:30:00Z',
-    modelName: 'LLaMA-3-70B',
-  },
-  {
-    id: 'profile-saved-2',
-    name: 'Dev Testing',
-    modelId: 'model-2',
-    engine: 'sglang',
-    maxModelLen: 4096,
-    gpuMemoryUtil: 0.85,
-    maxNumSeqs: 64,
-    maxNumBatchedTokens: 4096,
-    swapSpace: 2,
-    blockSize: 16,
-    quantization: 'none',
-    enforceEager: true,
-    enablePrefixCaching: false,
-    enableChunkedPrefill: false,
-    memFractionStatic: 0.85,
-    chunkPrefillSize: 4096,
-    temperature: 1.0,
-    topP: 1.0,
-    topK: -1,
-    repetitionPenalty: 1.0,
-    isPreset: false,
-    description: 'Development testing config with eager mode for Mistral-7B.',
-    createdAt: '2024-06-08T10:00:00Z',
-    updatedAt: '2024-06-09T16:00:00Z',
-    modelName: 'Mistral-7B-Instruct',
-  },
-  {
-    id: 'profile-saved-3',
-    name: 'AWQ Quantized Serve',
-    modelId: 'model-3',
-    engine: 'vllm',
-    maxModelLen: 4096,
-    gpuMemoryUtil: 0.9,
-    maxNumSeqs: 128,
-    maxNumBatchedTokens: 8192,
-    swapSpace: 4,
-    blockSize: 16,
-    quantization: 'awq',
-    enforceEager: false,
-    enablePrefixCaching: true,
-    enableChunkedPrefill: true,
-    memFractionStatic: 0.88,
-    chunkPrefillSize: 8192,
-    temperature: 0.8,
-    topP: 0.95,
-    topK: 50,
-    repetitionPenalty: 1.05,
-    isPreset: false,
-    description: 'AWQ quantized serving for Qwen2-72B with reduced memory.',
-    createdAt: '2024-06-14T12:00:00Z',
-    updatedAt: '2024-06-14T12:00:00Z',
-    modelName: 'Qwen2-72B-Chat',
   },
 ]
 
@@ -481,9 +327,35 @@ function TrendIndicator({ value, threshold = 50 }: { value: number; threshold?: 
   return <Minus className="size-4 text-yellow-500" />
 }
 
+// ─── Skeleton Loaders ───────────────────────────────────────────────────────
+function SkeletonCard() {
+  return (
+    <Card>
+      <CardContent className="p-6 space-y-3">
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="h-3 w-full" />
+        <Skeleton className="h-3 w-3/4" />
+      </CardContent>
+    </Card>
+  )
+}
+
+function SkeletonTableRow() {
+  return (
+    <TableRow>
+      <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+      <TableCell className="hidden sm:table-cell"><Skeleton className="h-4 w-24" /></TableCell>
+      <TableCell className="hidden md:table-cell"><Skeleton className="h-5 w-14" /></TableCell>
+      <TableCell className="hidden lg:table-cell"><Skeleton className="h-4 w-40" /></TableCell>
+      <TableCell><Skeleton className="h-8 w-20 ml-auto" /></TableCell>
+    </TableRow>
+  )
+}
+
 // ─── Main Component ─────────────────────────────────────────────────────────
 export default function ParametersPage() {
-  const { profiles, addProfile, updateProfile, removeProfile, models } = useAppStore()
+  const { data: profiles, loading: profilesLoading, error: profilesError, addProfile, editProfile, removeProfile } = useProfiles()
+  const { data: models, loading: modelsLoading, error: modelsError } = useModels()
 
   // ── State ──
   const [selectedModelId, setSelectedModelId] = useState<string>('')
@@ -495,18 +367,12 @@ export default function ParametersPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
   const [presetsImported, setPresetsImported] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
-  // Use store profiles or initial saved profiles
-  const savedProfiles = useMemo(() => {
-    if (profiles.length > 0) return profiles
-    return INITIAL_SAVED_PROFILES
-  }, [profiles])
-
-  // Use store models or mock models
-  const availableModels = useMemo(() => {
-    if (models.length > 0) return models
-    return MOCK_MODELS
-  }, [models])
+  // Null-safe lists from API data
+  const savedProfiles = profiles ?? []
+  const availableModels = models ?? []
 
   const selectedModel = useMemo(() => {
     return availableModels.find((m) => m.id === selectedModelId) ?? null
@@ -533,53 +399,52 @@ export default function ParametersPage() {
   }, [])
 
   // ── Import presets to saved profiles ──
-  const importPresets = useCallback(() => {
+  const importPresets = useCallback(async () => {
     if (presetsImported) {
       toast.info('Presets have already been imported.')
       return
     }
-    PRESET_PROFILES.forEach((preset, idx) => {
-      const profile: ParameterProfileInfo = {
-        id: `profile-preset-${idx}`,
-        name: preset.name,
-        modelId: selectedModelId || 'model-1',
-        engine: selectedModelId
-          ? (availableModels.find((m) => m.id === selectedModelId)?.engine ?? 'vllm')
-          : 'vllm',
-        maxModelLen: preset.maxModelLen,
-        gpuMemoryUtil: preset.gpuMemoryUtil,
-        maxNumSeqs: preset.maxNumSeqs,
-        maxNumBatchedTokens: preset.maxNumBatchedTokens,
-        swapSpace: preset.swapSpace,
-        blockSize: preset.blockSize,
-        quantization: preset.quantization,
-        enforceEager: preset.enforceEager,
-        enablePrefixCaching: preset.enablePrefixCaching,
-        enableChunkedPrefill: preset.enableChunkedPrefill,
-        memFractionStatic: preset.memFractionStatic,
-        chunkPrefillSize: preset.chunkPrefillSize,
-        temperature: preset.temperature,
-        topP: preset.topP,
-        topK: preset.topK,
-        repetitionPenalty: preset.repetitionPenalty,
-        isPreset: true,
-        description: preset.description,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        modelName: selectedModelId
-          ? (availableModels.find((m) => m.id === selectedModelId)?.name ?? 'Unknown')
-          : 'LLaMA-3-70B',
+    try {
+      for (const preset of PRESET_PROFILES) {
+        await addProfile({
+          name: preset.name,
+          modelId: selectedModelId || availableModels[0]?.id || '',
+          engine: selectedModelId
+            ? (availableModels.find((m) => m.id === selectedModelId)?.engine ?? 'vllm')
+            : 'vllm',
+          maxModelLen: preset.maxModelLen,
+          gpuMemoryUtil: preset.gpuMemoryUtil,
+          maxNumSeqs: preset.maxNumSeqs,
+          maxNumBatchedTokens: preset.maxNumBatchedTokens,
+          swapSpace: preset.swapSpace,
+          blockSize: preset.blockSize,
+          quantization: preset.quantization,
+          enforceEager: preset.enforceEager,
+          enablePrefixCaching: preset.enablePrefixCaching,
+          enableChunkedPrefill: preset.enableChunkedPrefill,
+          memFractionStatic: preset.memFractionStatic,
+          chunkPrefillSize: preset.chunkPrefillSize,
+          temperature: preset.temperature,
+          topP: preset.topP,
+          topK: preset.topK,
+          repetitionPenalty: preset.repetitionPenalty,
+          isPreset: true,
+          description: preset.description,
+        })
       }
-      addProfile(profile)
-    })
-    setPresetsImported(true)
-    toast.success('Preset profiles imported successfully!', {
-      description: `${PRESET_PROFILES.length} preset configurations added.`,
-    })
+      setPresetsImported(true)
+      toast.success('Preset profiles imported successfully!', {
+        description: `${PRESET_PROFILES.length} preset configurations added.`,
+      })
+    } catch (err) {
+      toast.error('Failed to import presets', {
+        description: err instanceof Error ? err.message : 'An unexpected error occurred.',
+      })
+    }
   }, [presetsImported, selectedModelId, availableModels, addProfile])
 
   // ── Save profile ──
-  const handleSaveProfile = useCallback(() => {
+  const handleSaveProfile = useCallback(async () => {
     if (!profileName.trim()) {
       toast.error('Profile name is required.')
       return
@@ -589,56 +454,56 @@ export default function ParametersPage() {
       return
     }
 
-    const now = new Date().toISOString()
-
-    if (editingProfileId) {
-      updateProfile(editingProfileId, {
-        name: profileName.trim(),
-        description: profileDescription.trim(),
-        modelId: selectedModelId,
-        engine,
-        modelName: selectedModel?.name,
-        ...params,
-        updatedAt: now,
-      })
-      toast.success('Profile updated successfully!')
-    } else {
-      const newProfile: ParameterProfileInfo = {
-        id: `profile-custom-${Date.now()}`,
-        name: profileName.trim(),
-        modelId: selectedModelId,
-        engine,
-        maxModelLen: params.maxModelLen,
-        gpuMemoryUtil: params.gpuMemoryUtil,
-        maxNumSeqs: params.maxNumSeqs,
-        maxNumBatchedTokens: params.maxNumBatchedTokens,
-        swapSpace: params.swapSpace,
-        blockSize: params.blockSize,
-        quantization: params.quantization,
-        enforceEager: params.enforceEager,
-        enablePrefixCaching: params.enablePrefixCaching,
-        enableChunkedPrefill: params.enableChunkedPrefill,
-        memFractionStatic: params.memFractionStatic,
-        chunkPrefillSize: params.chunkPrefillSize,
-        temperature: params.temperature,
-        topP: params.topP,
-        topK: params.topK,
-        repetitionPenalty: params.repetitionPenalty,
-        isPreset: false,
-        description: profileDescription.trim(),
-        createdAt: now,
-        updatedAt: now,
-        modelName: selectedModel?.name,
+    setSaving(true)
+    try {
+      if (editingProfileId) {
+        await editProfile(editingProfileId, {
+          name: profileName.trim(),
+          description: profileDescription.trim(),
+          modelId: selectedModelId,
+          engine,
+          ...params,
+        })
+        toast.success('Profile updated successfully!')
+      } else {
+        await addProfile({
+          name: profileName.trim(),
+          modelId: selectedModelId,
+          engine,
+          maxModelLen: params.maxModelLen,
+          gpuMemoryUtil: params.gpuMemoryUtil,
+          maxNumSeqs: params.maxNumSeqs,
+          maxNumBatchedTokens: params.maxNumBatchedTokens,
+          swapSpace: params.swapSpace,
+          blockSize: params.blockSize,
+          quantization: params.quantization,
+          enforceEager: params.enforceEager,
+          enablePrefixCaching: params.enablePrefixCaching,
+          enableChunkedPrefill: params.enableChunkedPrefill,
+          memFractionStatic: params.memFractionStatic,
+          chunkPrefillSize: params.chunkPrefillSize,
+          temperature: params.temperature,
+          topP: params.topP,
+          topK: params.topK,
+          repetitionPenalty: params.repetitionPenalty,
+          isPreset: false,
+          description: profileDescription.trim(),
+        })
+        toast.success('Profile saved successfully!')
       }
-      addProfile(newProfile)
-      toast.success('Profile saved successfully!')
-    }
 
-    setSaveDialogOpen(false)
-    setProfileName('')
-    setProfileDescription('')
-    setEditingProfileId(null)
-  }, [profileName, profileDescription, selectedModelId, selectedModel, engine, params, editingProfileId, addProfile, updateProfile])
+      setSaveDialogOpen(false)
+      setProfileName('')
+      setProfileDescription('')
+      setEditingProfileId(null)
+    } catch (err) {
+      toast.error(editingProfileId ? 'Failed to update profile' : 'Failed to save profile', {
+        description: err instanceof Error ? err.message : 'An unexpected error occurred.',
+      })
+    } finally {
+      setSaving(false)
+    }
+  }, [profileName, profileDescription, selectedModelId, engine, params, editingProfileId, addProfile, editProfile])
 
   // ── Edit profile ──
   const handleEditProfile = useCallback((profile: ParameterProfileInfo) => {
@@ -668,32 +533,62 @@ export default function ParametersPage() {
   }, [])
 
   // ── Duplicate profile ──
-  const handleDuplicateProfile = useCallback((profile: ParameterProfileInfo) => {
-    const now = new Date().toISOString()
-    const newProfile: ParameterProfileInfo = {
-      ...profile,
-      id: `profile-custom-${Date.now()}`,
-      name: `${profile.name} (Copy)`,
-      isPreset: false,
-      createdAt: now,
-      updatedAt: now,
+  const handleDuplicateProfile = useCallback(async (profile: ParameterProfileInfo) => {
+    try {
+      await addProfile({
+        name: `${profile.name} (Copy)`,
+        modelId: profile.modelId,
+        engine: profile.engine,
+        maxModelLen: profile.maxModelLen,
+        gpuMemoryUtil: profile.gpuMemoryUtil,
+        maxNumSeqs: profile.maxNumSeqs,
+        maxNumBatchedTokens: profile.maxNumBatchedTokens,
+        swapSpace: profile.swapSpace,
+        blockSize: profile.blockSize,
+        quantization: profile.quantization,
+        enforceEager: profile.enforceEager,
+        enablePrefixCaching: profile.enablePrefixCaching,
+        enableChunkedPrefill: profile.enableChunkedPrefill,
+        memFractionStatic: profile.memFractionStatic,
+        chunkPrefillSize: profile.chunkPrefillSize,
+        temperature: profile.temperature,
+        topP: profile.topP,
+        topK: profile.topK,
+        repetitionPenalty: profile.repetitionPenalty,
+        isPreset: false,
+        description: profile.description,
+      })
+      toast.success('Profile duplicated!', { description: `"${profile.name}" has been duplicated.` })
+    } catch (err) {
+      toast.error('Failed to duplicate profile', {
+        description: err instanceof Error ? err.message : 'An unexpected error occurred.',
+      })
     }
-    addProfile(newProfile)
-    toast.success('Profile duplicated!', { description: `"${profile.name}" has been duplicated.` })
   }, [addProfile])
 
   // ── Delete profile ──
-  const handleDeleteProfile = useCallback(() => {
-    if (deleteTargetId) {
-      removeProfile(deleteTargetId)
+  const handleDeleteProfile = useCallback(async () => {
+    if (!deleteTargetId) return
+
+    setDeleting(true)
+    try {
+      await removeProfile(deleteTargetId)
       toast.success('Profile deleted.')
       setDeleteTargetId(null)
       setDeleteDialogOpen(false)
+    } catch (err) {
+      toast.error('Failed to delete profile', {
+        description: err instanceof Error ? err.message : 'An unexpected error occurred.',
+      })
+    } finally {
+      setDeleting(false)
     }
   }, [deleteTargetId, removeProfile])
 
   // ── Impact calculations ──
   const impact = useMemo(() => computeImpact(params, engine), [params, engine])
+
+  const isLoading = profilesLoading || modelsLoading
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -711,7 +606,7 @@ export default function ParametersPage() {
                 <p className="text-muted-foreground mt-1">Configure and optimize inference parameters for your models</p>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                <Button variant="outline" size="sm" onClick={importPresets}>
+                <Button variant="outline" size="sm" onClick={importPresets} disabled={isLoading}>
                   <Download className="size-4" />
                   Import Presets
                 </Button>
@@ -729,6 +624,23 @@ export default function ParametersPage() {
 
             <Separator />
 
+            {/* ── Error State ── */}
+            {(profilesError || modelsError) && (
+              <Card className="border-destructive/50 bg-destructive/5">
+                <CardContent className="py-4 flex items-center gap-3">
+                  <AlertCircle className="size-5 text-destructive shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-destructive">Failed to load data</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {profilesError && `Profiles: ${profilesError}`}
+                      {profilesError && modelsError && ' · '}
+                      {modelsError && `Models: ${modelsError}`}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* ── Model Selector ── */}
             <Card>
               <CardHeader className="pb-4">
@@ -738,26 +650,30 @@ export default function ParametersPage() {
               <CardContent>
                 <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
                   <div className="flex-1 w-full sm:w-auto">
-                    <Select value={selectedModelId} onValueChange={(val) => {
-                      setSelectedModelId(val)
-                      const model = availableModels.find((m) => m.id === val)
-                      if (model) {
-                        toast.info(`Selected ${model.name}`, {
-                          description: `Engine: ${model.engine.toUpperCase()}`,
-                        })
-                      }
-                    }}>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Choose a model..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableModels.map((model) => (
-                          <SelectItem key={model.id} value={model.id}>
-                            {model.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {modelsLoading ? (
+                      <Skeleton className="h-10 w-full" />
+                    ) : (
+                      <Select value={selectedModelId} onValueChange={(val) => {
+                        setSelectedModelId(val)
+                        const model = availableModels.find((m) => m.id === val)
+                        if (model) {
+                          toast.info(`Selected ${model.name}`, {
+                            description: `Engine: ${model.engine.toUpperCase()}`,
+                          })
+                        }
+                      }}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Choose a model..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableModels.map((model) => (
+                            <SelectItem key={model.id} value={model.id}>
+                              {model.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
                   {selectedModel && (
                     <Badge variant={engine === 'vllm' ? 'default' : 'secondary'} className="text-xs shrink-0">
@@ -1133,7 +1049,28 @@ export default function ParametersPage() {
                   {savedProfiles.length} profiles
                 </Badge>
               </div>
-              {savedProfiles.length === 0 ? (
+              {profilesLoading ? (
+                <Card>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead className="hidden sm:table-cell">Model</TableHead>
+                          <TableHead className="hidden md:table-cell">Engine</TableHead>
+                          <TableHead className="hidden lg:table-cell">Key Parameters</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {Array.from({ length: 3 }).map((_, i) => (
+                          <SkeletonTableRow key={i} />
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              ) : savedProfiles.length === 0 ? (
                 <Card>
                   <CardContent className="py-12 text-center">
                     <SlidersHorizontal className="size-10 text-muted-foreground/50 mx-auto mb-3" />
@@ -1310,11 +1247,11 @@ export default function ParametersPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setSaveDialogOpen(false)}>
+              <Button variant="outline" onClick={() => setSaveDialogOpen(false)} disabled={saving}>
                 Cancel
               </Button>
-              <Button onClick={handleSaveProfile} disabled={!profileName.trim() || !selectedModelId}>
-                <Save className="size-4" />
+              <Button onClick={handleSaveProfile} disabled={!profileName.trim() || !selectedModelId || saving}>
+                {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
                 {editingProfileId ? 'Update' : 'Save'}
               </Button>
             </DialogFooter>
@@ -1331,11 +1268,13 @@ export default function ParametersPage() {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setDeleteTargetId(null)}>Cancel</AlertDialogCancel>
+              <AlertDialogCancel onClick={() => setDeleteTargetId(null)} disabled={deleting}>Cancel</AlertDialogCancel>
               <AlertDialogAction
                 onClick={handleDeleteProfile}
                 className="bg-destructive text-white hover:bg-destructive/90"
+                disabled={deleting}
               >
+                {deleting ? <Loader2 className="size-4 animate-spin mr-1" /> : null}
                 Delete
               </AlertDialogAction>
             </AlertDialogFooter>

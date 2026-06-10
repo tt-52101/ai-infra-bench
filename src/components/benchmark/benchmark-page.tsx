@@ -49,11 +49,19 @@ import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   CartesianGrid
 } from 'recharts'
-import { useAppStore } from '@/lib/store'
+import { useBenchmarks, useResults, useModels, useProfiles } from '@/hooks/use-api'
+import { toast } from 'sonner'
 import type {
   BenchmarkTaskInfo, BenchmarkResultInfo, BenchmarkScenario,
   TaskStatus, ModelInfo, ParameterProfileInfo, EngineType
 } from '@/lib/types'
+
+// ─── Extended types for API responses with included relations ────
+interface BenchmarkWithRelations extends BenchmarkTaskInfo {
+  model?: { id: string; name: string; engine: string }
+  profile?: { id: string; name: string; engine: string }
+  results?: BenchmarkResultInfo[]
+}
 
 // ─── Scenario Config ──────────────────────────────────────────
 interface ScenarioConfig {
@@ -126,208 +134,7 @@ const SCENARIOS: ScenarioConfig[] = [
   }
 ]
 
-// ─── Mock Data ────────────────────────────────────────────────
-const MOCK_MODELS: ModelInfo[] = [
-  {
-    id: 'model-1', name: 'LLaMA-3.1-70B', engine: 'vllm',
-    modelPath: '/models/llama-3.1-70b', version: '1.0',
-    status: 'active', description: 'LLaMA 3.1 70B parameter model',
-    gpuType: 'A100', gpuCount: 4, maxSeqLen: 8192,
-    dtype: 'float16', tensorParallelSize: 4, pipelineParallelSize: 1,
-    createdAt: '2025-01-15T10:00:00Z', updatedAt: '2025-01-15T10:00:00Z'
-  },
-  {
-    id: 'model-2', name: 'Qwen2.5-72B', engine: 'sglang',
-    modelPath: '/models/qwen2.5-72b', version: '1.0',
-    status: 'active', description: 'Qwen 2.5 72B parameter model',
-    gpuType: 'H100', gpuCount: 4, maxSeqLen: 32768,
-    dtype: 'bfloat16', tensorParallelSize: 4, pipelineParallelSize: 1,
-    createdAt: '2025-01-16T10:00:00Z', updatedAt: '2025-01-16T10:00:00Z'
-  },
-  {
-    id: 'model-3', name: 'DeepSeek-V3-671B', engine: 'vllm',
-    modelPath: '/models/deepseek-v3', version: '1.0',
-    status: 'active', description: 'DeepSeek V3 671B MoE model',
-    gpuType: 'H100', gpuCount: 8, maxSeqLen: 16384,
-    dtype: 'bfloat16', tensorParallelSize: 8, pipelineParallelSize: 2,
-    createdAt: '2025-01-17T10:00:00Z', updatedAt: '2025-01-17T10:00:00Z'
-  }
-]
-
-const MOCK_PROFILES: ParameterProfileInfo[] = [
-  {
-    id: 'profile-1', name: 'High Throughput', modelId: 'model-1', engine: 'vllm',
-    maxModelLen: 8192, gpuMemoryUtil: 0.9, maxNumSeqs: 256,
-    maxNumBatchedTokens: 32768, swapSpace: 4, blockSize: 16,
-    quantization: 'none', enforceEager: false, enablePrefixCaching: true,
-    enableChunkedPrefill: true, memFractionStatic: 0.85, chunkPrefillSize: 4096,
-    temperature: 0.7, topP: 0.9, topK: 50, repetitionPenalty: 1.0,
-    isPreset: true, description: 'Optimized for throughput',
-    createdAt: '2025-01-15T10:00:00Z', updatedAt: '2025-01-15T10:00:00Z'
-  },
-  {
-    id: 'profile-2', name: 'Low Latency', modelId: 'model-1', engine: 'vllm',
-    maxModelLen: 4096, gpuMemoryUtil: 0.85, maxNumSeqs: 64,
-    maxNumBatchedTokens: 16384, swapSpace: 2, blockSize: 16,
-    quantization: 'none', enforceEager: true, enablePrefixCaching: true,
-    enableChunkedPrefill: false, memFractionStatic: 0.8, chunkPrefillSize: 2048,
-    temperature: 0.5, topP: 0.85, topK: 30, repetitionPenalty: 1.0,
-    isPreset: true, description: 'Optimized for low latency',
-    createdAt: '2025-01-15T11:00:00Z', updatedAt: '2025-01-15T11:00:00Z'
-  },
-  {
-    id: 'profile-3', name: 'Balanced', modelId: 'model-2', engine: 'sglang',
-    maxModelLen: 8192, gpuMemoryUtil: 0.88, maxNumSeqs: 128,
-    maxNumBatchedTokens: 24576, swapSpace: 4, blockSize: 16,
-    quantization: 'none', enforceEager: false, enablePrefixCaching: true,
-    enableChunkedPrefill: true, memFractionStatic: 0.82, chunkPrefillSize: 4096,
-    temperature: 0.6, topP: 0.9, topK: 40, repetitionPenalty: 1.0,
-    isPreset: true, description: 'Balanced throughput and latency',
-    createdAt: '2025-01-16T10:00:00Z', updatedAt: '2025-01-16T10:00:00Z'
-  },
-  {
-    id: 'profile-4', name: 'Maximum Quality', modelId: 'model-3', engine: 'vllm',
-    maxModelLen: 16384, gpuMemoryUtil: 0.92, maxNumSeqs: 32,
-    maxNumBatchedTokens: 16384, swapSpace: 8, blockSize: 16,
-    quantization: 'none', enforceEager: false, enablePrefixCaching: true,
-    enableChunkedPrefill: true, memFractionStatic: 0.9, chunkPrefillSize: 8192,
-    temperature: 0.8, topP: 0.95, topK: 100, repetitionPenalty: 1.05,
-    isPreset: false, description: 'Maximum output quality',
-    createdAt: '2025-01-17T10:00:00Z', updatedAt: '2025-01-17T10:00:00Z'
-  }
-]
-
-const now = new Date()
-const MOCK_TASKS: BenchmarkTaskInfo[] = [
-  {
-    id: 'task-1', name: 'LLaMA-3.1-70B Single Stream', modelId: 'model-1',
-    profileId: 'profile-1', scenario: 'single_stream', numRequests: 100,
-    inputTokens: 512, outputTokens: 256, concurrency: 1, duration: 60,
-    status: 'completed', progress: 100,
-    startedAt: new Date(now.getTime() - 86400000 * 3).toISOString(),
-    completedAt: new Date(now.getTime() - 86400000 * 3 + 58000).toISOString(),
-    createdAt: new Date(now.getTime() - 86400000 * 3).toISOString(),
-    updatedAt: new Date(now.getTime() - 86400000 * 3 + 58000).toISOString(),
-    modelName: 'LLaMA-3.1-70B', profileName: 'High Throughput', engine: 'vllm'
-  },
-  {
-    id: 'task-2', name: 'Qwen2.5-72B Multi Stream', modelId: 'model-2',
-    profileId: 'profile-3', scenario: 'multi_stream', numRequests: 1000,
-    inputTokens: 1024, outputTokens: 512, concurrency: 32, duration: 120,
-    status: 'completed', progress: 100,
-    startedAt: new Date(now.getTime() - 86400000 * 2).toISOString(),
-    completedAt: new Date(now.getTime() - 86400000 * 2 + 115000).toISOString(),
-    createdAt: new Date(now.getTime() - 86400000 * 2).toISOString(),
-    updatedAt: new Date(now.getTime() - 86400000 * 2 + 115000).toISOString(),
-    modelName: 'Qwen2.5-72B', profileName: 'Balanced', engine: 'sglang'
-  },
-  {
-    id: 'task-3', name: 'DeepSeek-V3 Burst Test', modelId: 'model-3',
-    profileId: 'profile-4', scenario: 'burst', numRequests: 500,
-    inputTokens: 256, outputTokens: 128, concurrency: 64, duration: 30,
-    status: 'failed', progress: 47,
-    startedAt: new Date(now.getTime() - 86400000).toISOString(),
-    completedAt: new Date(now.getTime() - 86400000 + 14000).toISOString(),
-    createdAt: new Date(now.getTime() - 86400000).toISOString(),
-    updatedAt: new Date(now.getTime() - 86400000 + 14000).toISOString(),
-    modelName: 'DeepSeek-V3-671B', profileName: 'Maximum Quality', engine: 'vllm'
-  },
-  {
-    id: 'task-4', name: 'LLaMA Serving Simulation', modelId: 'model-1',
-    profileId: 'profile-2', scenario: 'serving', numRequests: 2000,
-    inputTokens: 2048, outputTokens: 1024, concurrency: 16, duration: 300,
-    status: 'completed', progress: 100,
-    startedAt: new Date(now.getTime() - 3600000 * 5).toISOString(),
-    completedAt: new Date(now.getTime() - 3600000 * 5 + 298000).toISOString(),
-    createdAt: new Date(now.getTime() - 3600000 * 5).toISOString(),
-    updatedAt: new Date(now.getTime() - 3600000 * 5 + 298000).toISOString(),
-    modelName: 'LLaMA-3.1-70B', profileName: 'Low Latency', engine: 'vllm'
-  },
-  {
-    id: 'task-5', name: 'Qwen Custom Benchmark', modelId: 'model-2',
-    profileId: 'profile-3', scenario: 'custom', numRequests: 500,
-    inputTokens: 2048, outputTokens: 1024, concurrency: 8, duration: 120,
-    status: 'pending', progress: 0,
-    startedAt: null, completedAt: null,
-    createdAt: new Date(now.getTime() - 1800000).toISOString(),
-    updatedAt: new Date(now.getTime() - 1800000).toISOString(),
-    modelName: 'Qwen2.5-72B', profileName: 'Balanced', engine: 'sglang'
-  }
-]
-
-const MOCK_RESULTS: BenchmarkResultInfo[] = [
-  {
-    id: 'result-1', taskId: 'task-1',
-    throughputTokensPerSec: 2847.5, throughputRequestsPerSec: 1.72,
-    latencyMeanMs: 582.3, latencyP50Ms: 545.1, latencyP90Ms: 712.8, latencyP99Ms: 845.2,
-    timeToFirstTokenMs: 142.5, timePerOutputTokenMs: 2.27,
-    gpuMemoryUsedGb: 38.2, gpuUtilization: 0.72, cpuUtilization: 0.18,
-    errorRate: 0.01, totalRequests: 100, successRequests: 99, failedRequests: 1,
-    detailJson: JSON.stringify({
-      latencyDistribution: [
-        { range: '0-200ms', count: 12 }, { range: '200-400ms', count: 28 },
-        { range: '400-600ms', count: 35 }, { range: '600-800ms', count: 18 },
-        { range: '800-1000ms', count: 5 }, { range: '>1000ms', count: 2 }
-      ],
-      throughputTimeline: [
-        { time: '0s', throughput: 2100 }, { time: '10s', throughput: 2650 },
-        { time: '20s', throughput: 2800 }, { time: '30s', throughput: 2900 },
-        { time: '40s', throughput: 2850 }, { time: '50s', throughput: 2780 },
-        { time: '58s', throughput: 2847 }
-      ]
-    }),
-    createdAt: new Date(now.getTime() - 86400000 * 3 + 58000).toISOString()
-  },
-  {
-    id: 'result-2', taskId: 'task-2',
-    throughputTokensPerSec: 15234.8, throughputRequestsPerSec: 8.42,
-    latencyMeanMs: 1186.5, latencyP50Ms: 1050.2, latencyP90Ms: 1523.7, latencyP99Ms: 2134.1,
-    timeToFirstTokenMs: 285.3, timePerOutputTokenMs: 1.92,
-    gpuMemoryUsedGb: 62.8, gpuUtilization: 0.91, cpuUtilization: 0.35,
-    errorRate: 0.003, totalRequests: 1000, successRequests: 997, failedRequests: 3,
-    detailJson: JSON.stringify({
-      latencyDistribution: [
-        { range: '0-500ms', count: 180 }, { range: '500-1000ms', count: 320 },
-        { range: '1000-1500ms', count: 280 }, { range: '1500-2000ms', count: 150 },
-        { range: '2000-2500ms', count: 50 }, { range: '>2500ms', count: 20 }
-      ],
-      throughputTimeline: [
-        { time: '0s', throughput: 8200 }, { time: '20s', throughput: 12800 },
-        { time: '40s', throughput: 14500 }, { time: '60s', throughput: 15300 },
-        { time: '80s', throughput: 15600 }, { time: '100s', throughput: 15200 },
-        { time: '115s', throughput: 15234 }
-      ]
-    }),
-    createdAt: new Date(now.getTime() - 86400000 * 2 + 115000).toISOString()
-  },
-  {
-    id: 'result-4', taskId: 'task-4',
-    throughputTokensPerSec: 8923.4, throughputRequestsPerSec: 6.67,
-    latencyMeanMs: 1498.2, latencyP50Ms: 1320.5, latencyP90Ms: 1892.3, latencyP99Ms: 2845.7,
-    timeToFirstTokenMs: 312.8, timePerOutputTokenMs: 2.14,
-    gpuMemoryUsedGb: 41.5, gpuUtilization: 0.85, cpuUtilization: 0.28,
-    errorRate: 0.008, totalRequests: 2000, successRequests: 1984, failedRequests: 16,
-    detailJson: JSON.stringify({
-      latencyDistribution: [
-        { range: '0-500ms', count: 310 }, { range: '500-1000ms', count: 480 },
-        { range: '1000-1500ms', count: 520 }, { range: '1500-2000ms', count: 380 },
-        { range: '2000-3000ms', count: 220 }, { range: '>3000ms', count: 90 }
-      ],
-      throughputTimeline: [
-        { time: '0s', throughput: 5400 }, { time: '60s', throughput: 7200 },
-        { time: '120s', throughput: 8100 }, { time: '180s', throughput: 8700 },
-        { time: '240s', throughput: 8950 }, { time: '298s', throughput: 8923 }
-      ]
-    }),
-    createdAt: new Date(now.getTime() - 3600000 * 5 + 298000).toISOString()
-  }
-]
-
 // ─── Helper Functions ─────────────────────────────────────────
-function generateId(): string {
-  return `task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-}
-
 function formatDuration(seconds: number): string {
   if (seconds < 60) return `${seconds}s`
   const m = Math.floor(seconds / 60)
@@ -358,6 +165,31 @@ function getScenarioLabel(scenario: BenchmarkScenario): string {
 function getScenarioColor(scenario: BenchmarkScenario): string {
   const s = SCENARIOS.find(s => s.id === scenario)
   return s ? s.color : 'text-slate-600'
+}
+
+/** Map API benchmark (with nested relations) to flat BenchmarkTaskInfo */
+function mapBenchmarkTask(b: BenchmarkWithRelations): BenchmarkTaskInfo {
+  return {
+    id: b.id,
+    name: b.name,
+    modelId: b.modelId,
+    profileId: b.profileId,
+    scenario: b.scenario,
+    numRequests: b.numRequests,
+    inputTokens: b.inputTokens,
+    outputTokens: b.outputTokens,
+    concurrency: b.concurrency,
+    duration: b.duration,
+    status: b.status,
+    progress: b.progress,
+    startedAt: b.startedAt,
+    completedAt: b.completedAt,
+    createdAt: b.createdAt,
+    updatedAt: b.updatedAt,
+    modelName: b.model?.name ?? b.modelName,
+    profileName: b.profile?.name ?? b.profileName,
+    engine: b.model?.engine ?? b.engine,
+  }
 }
 
 // ─── Status Badge Component ───────────────────────────────────
@@ -453,32 +285,37 @@ function LatencyDistChart({ data }: { data: { range: string; count: number }[] }
   )
 }
 
+// ─── Loading Skeleton ─────────────────────────────────────────
+function TableSkeleton() {
+  return (
+    <div className="space-y-3 p-4">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-4">
+          <div className="h-4 w-40 animate-pulse rounded bg-muted" />
+          <div className="h-4 w-24 animate-pulse rounded bg-muted" />
+          <div className="h-4 w-20 animate-pulse rounded bg-muted" />
+          <div className="h-4 w-16 animate-pulse rounded bg-muted" />
+          <div className="h-4 w-16 animate-pulse rounded bg-muted" />
+          <div className="h-4 w-12 animate-pulse rounded bg-muted" />
+          <div className="h-4 w-20 animate-pulse rounded bg-muted" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ─── Main Component ───────────────────────────────────────────
 export default function BenchmarkPage() {
-  const { tasks, addTask, updateTask, removeTask, results, addResult } = useAppStore()
+  const { data: benchmarksRaw, loading: benchmarksLoading, addBenchmark, editBenchmark, removeBenchmark } = useBenchmarks()
+  const { data: results, addResult } = useResults()
+  const { data: models } = useModels()
+  const { data: profiles } = useProfiles()
 
-  // Initialize mock data
-  const initialized = useRef(false)
-  useEffect(() => {
-    if (!initialized.current) {
-      initialized.current = true
-      if (tasks.length === 0) {
-        useAppStore.setState({ tasks: MOCK_TASKS })
-      }
-      if (results.length === 0) {
-        useAppStore.setState({ results: MOCK_RESULTS })
-      }
-      if (useAppStore.getState().models.length === 0) {
-        useAppStore.setState({ models: MOCK_MODELS })
-      }
-      if (useAppStore.getState().profiles.length === 0) {
-        useAppStore.setState({ profiles: MOCK_PROFILES })
-      }
-    }
-  }, [])
-
-  const models = useAppStore(s => s.models)
-  const profiles = useAppStore(s => s.profiles)
+  // Map API benchmarks to flat BenchmarkTaskInfo with modelName/profileName/engine
+  const tasks = useMemo<BenchmarkTaskInfo[]>(() => {
+    if (!benchmarksRaw) return []
+    return benchmarksRaw.map(mapBenchmarkTask)
+  }, [benchmarksRaw])
 
   // ─── Local State ──────────────────────────────────────────
   const [configOpen, setConfigOpen] = useState(false)
@@ -498,6 +335,7 @@ export default function BenchmarkPage() {
 
   // Running benchmark simulation state
   const [runningTaskId, setRunningTaskId] = useState<string | null>(null)
+  const [runningProgress, setRunningProgress] = useState(0)
   const [liveMetrics, setLiveMetrics] = useState({
     requestsCompleted: 0,
     currentThroughput: 0,
@@ -506,6 +344,7 @@ export default function BenchmarkPage() {
     throughputHistory: [] as { time: string; throughput: number }[]
   })
   const simulationRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const throughputHistoryRef = useRef<{ time: string; throughput: number }[]>([])
 
   // Table sorting and filtering
   const [sortField, setSortField] = useState<string>('createdAt')
@@ -514,7 +353,7 @@ export default function BenchmarkPage() {
 
   // ─── Derived Data ─────────────────────────────────────────
   const filteredProfiles = useMemo(() =>
-    profiles.filter(p => p.modelId === selectedModelId),
+    (profiles ?? []).filter(p => p.modelId === selectedModelId),
     [profiles, selectedModelId]
   )
 
@@ -557,175 +396,214 @@ export default function BenchmarkPage() {
   }, [])
 
   // ─── Start Benchmark Handler ────────────────────────────────
-  const handleStartBenchmark = useCallback(() => {
+  const handleStartBenchmark = useCallback(async () => {
     if (!taskName || !selectedModelId || !selectedProfileId) return
 
-    const model = models.find(m => m.id === selectedModelId)
-    const profile = profiles.find(p => p.id === selectedProfileId)
-    const newTask: BenchmarkTaskInfo = {
-      id: generateId(),
-      name: taskName,
-      modelId: selectedModelId,
-      profileId: selectedProfileId,
-      scenario: selectedScenario,
-      numRequests,
-      inputTokens,
-      outputTokens,
-      concurrency,
-      duration,
-      status: 'running',
-      progress: 0,
-      startedAt: new Date().toISOString(),
-      completedAt: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      modelName: model?.name,
-      profileName: profile?.name,
-      engine: model?.engine
-    }
+    try {
+      // Create benchmark via API (status defaults to 'pending')
+      const newTask = await addBenchmark({
+        name: taskName,
+        modelId: selectedModelId,
+        profileId: selectedProfileId,
+        scenario: selectedScenario,
+        numRequests,
+        inputTokens,
+        outputTokens,
+        concurrency,
+        duration,
+      })
 
-    addTask(newTask)
-    setRunningTaskId(newTask.id)
-    setConfigOpen(false)
+      // Update to running status
+      await editBenchmark(newTask.id, {
+        status: 'running',
+        progress: 0,
+        startedAt: new Date().toISOString(),
+      })
 
-    // Reset form
-    setTaskName('')
-    setSelectedModelId('')
-    setSelectedProfileId('')
-    setSelectedScenario('single_stream')
-    setNumRequests(100)
-    setInputTokens(512)
-    setOutputTokens(256)
-    setConcurrency(1)
-    setDuration(60)
+      setRunningTaskId(newTask.id)
+      setRunningProgress(0)
+      setConfigOpen(false)
 
-    // Simulate running benchmark
-    setLiveMetrics({
-      requestsCompleted: 0,
-      currentThroughput: 0,
-      currentLatency: 0,
-      elapsedSeconds: 0,
-      throughputHistory: []
-    })
+      // Reset form
+      setTaskName('')
+      setSelectedModelId('')
+      setSelectedProfileId('')
+      setSelectedScenario('single_stream')
+      setNumRequests(100)
+      setInputTokens(512)
+      setOutputTokens(256)
+      setConcurrency(1)
+      setDuration(60)
 
-    const totalSteps = 50
-    const intervalMs = 200
-    let step = 0
+      // Simulate running benchmark
+      setLiveMetrics({
+        requestsCompleted: 0,
+        currentThroughput: 0,
+        currentLatency: 0,
+        elapsedSeconds: 0,
+        throughputHistory: []
+      })
+      throughputHistoryRef.current = []
 
-    simulationRef.current = setInterval(() => {
-      step++
-      const progress = Math.min(Math.round((step / totalSteps) * 100), 100)
-      const elapsedSeconds = Math.round((step / totalSteps) * newTask.duration)
-      const reqsCompleted = Math.round((progress / 100) * newTask.numRequests)
+      const taskDuration = duration
+      const taskNumRequests = numRequests
+      const taskConcurrency = concurrency
+      const taskInputTokens = inputTokens
+      const taskOutputTokens = outputTokens
 
-      // Simulate realistic throughput with some variance
-      const baseThroughput = newTask.concurrency === 1 ? 2800 : (1500 + newTask.concurrency * 120)
-      const variance = (Math.random() - 0.5) * baseThroughput * 0.15
-      const currentThroughput = Math.max(0, Math.round(baseThroughput + variance))
+      const totalSteps = 50
+      const intervalMs = 200
+      let step = 0
 
-      const baseLatency = newTask.concurrency === 1 ? 580 : (800 + newTask.concurrency * 15)
-      const latencyVariance = (Math.random() - 0.5) * baseLatency * 0.2
-      const currentLatency = Math.max(0, Math.round(baseLatency + latencyVariance))
+      simulationRef.current = setInterval(() => {
+        step++
+        const progress = Math.min(Math.round((step / totalSteps) * 100), 100)
+        const elapsedSeconds = Math.round((step / totalSteps) * taskDuration)
+        const reqsCompleted = Math.round((progress / 100) * taskNumRequests)
 
-      setLiveMetrics(prev => ({
-        requestsCompleted: reqsCompleted,
-        currentThroughput,
-        currentLatency,
-        elapsedSeconds,
-        throughputHistory: [
-          ...prev.throughputHistory,
-          { time: `${elapsedSeconds}s`, throughput: currentThroughput }
-        ]
-      }))
+        // Simulate realistic throughput with some variance
+        const baseThroughput = taskConcurrency === 1 ? 2800 : (1500 + taskConcurrency * 120)
+        const variance = (Math.random() - 0.5) * baseThroughput * 0.15
+        const currentThroughput = Math.max(0, Math.round(baseThroughput + variance))
 
-      updateTask(newTask.id, { progress })
+        const baseLatency = taskConcurrency === 1 ? 580 : (800 + taskConcurrency * 15)
+        const latencyVariance = (Math.random() - 0.5) * baseLatency * 0.2
+        const currentLatency = Math.max(0, Math.round(baseLatency + latencyVariance))
 
-      if (step >= totalSteps) {
-        if (simulationRef.current) clearInterval(simulationRef.current)
-        simulationRef.current = null
-        setRunningTaskId(null)
+        const newHistoryEntry = { time: `${elapsedSeconds}s`, throughput: currentThroughput }
+        throughputHistoryRef.current = [...throughputHistoryRef.current, newHistoryEntry]
 
-        // Generate result
-        const finalThroughput = currentThroughput
-        const finalLatency = currentLatency
-        const result: BenchmarkResultInfo = {
-          id: `result-${Date.now()}`,
-          taskId: newTask.id,
-          throughputTokensPerSec: finalThroughput,
-          throughputRequestsPerSec: Number((finalThroughput / (newTask.inputTokens + newTask.outputTokens)).toFixed(2)),
-          latencyMeanMs: finalLatency,
-          latencyP50Ms: Math.round(finalLatency * 0.9),
-          latencyP90Ms: Math.round(finalLatency * 1.3),
-          latencyP99Ms: Math.round(finalLatency * 1.6),
-          timeToFirstTokenMs: Math.round(finalLatency * 0.25),
-          timePerOutputTokenMs: Number((1000 / finalThroughput * newTask.outputTokens).toFixed(2)),
-          gpuMemoryUsedGb: Number((30 + Math.random() * 40).toFixed(1)),
-          gpuUtilization: Number((0.6 + Math.random() * 0.35).toFixed(2)),
-          cpuUtilization: Number((0.1 + Math.random() * 0.3).toFixed(2)),
-          errorRate: Number((Math.random() * 0.02).toFixed(4)),
-          totalRequests: newTask.numRequests,
-          successRequests: newTask.numRequests - Math.floor(Math.random() * 5),
-          failedRequests: Math.floor(Math.random() * 5),
-          detailJson: JSON.stringify({
-            latencyDistribution: [
-              { range: `0-${Math.round(finalLatency * 0.5)}ms`, count: Math.round(newTask.numRequests * 0.2) },
-              { range: `${Math.round(finalLatency * 0.5)}-${Math.round(finalLatency * 0.9)}ms`, count: Math.round(newTask.numRequests * 0.35) },
-              { range: `${Math.round(finalLatency * 0.9)}-${Math.round(finalLatency * 1.2)}ms`, count: Math.round(newTask.numRequests * 0.25) },
-              { range: `${Math.round(finalLatency * 1.2)}-${Math.round(finalLatency * 1.5)}ms`, count: Math.round(newTask.numRequests * 0.12) },
-              { range: `${Math.round(finalLatency * 1.5)}-${Math.round(finalLatency * 2)}ms`, count: Math.round(newTask.numRequests * 0.05) },
-              { range: `>${Math.round(finalLatency * 2)}ms`, count: Math.round(newTask.numRequests * 0.03) }
-            ],
-            throughputTimeline: liveMetrics.throughputHistory.length > 0
-              ? liveMetrics.throughputHistory
-              : [{ time: '0s', throughput: finalThroughput }]
-          }),
-          createdAt: new Date().toISOString()
-        }
-
-        addResult(result)
-        updateTask(newTask.id, {
-          status: 'completed',
-          progress: 100,
-          completedAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
+        setLiveMetrics({
+          requestsCompleted: reqsCompleted,
+          currentThroughput,
+          currentLatency,
+          elapsedSeconds,
+          throughputHistory: throughputHistoryRef.current
         })
-      }
-    }, intervalMs)
+        setRunningProgress(progress)
+
+        if (step >= totalSteps) {
+          if (simulationRef.current) clearInterval(simulationRef.current)
+          simulationRef.current = null
+          setRunningTaskId(null)
+          setRunningProgress(0)
+
+          // Generate result data
+          const finalThroughput = currentThroughput
+          const finalLatency = currentLatency
+
+          // Save result via API
+          addResult({
+            taskId: newTask.id,
+            throughputTokensPerSec: finalThroughput,
+            throughputRequestsPerSec: Number((finalThroughput / (taskInputTokens + taskOutputTokens)).toFixed(2)),
+            latencyMeanMs: finalLatency,
+            latencyP50Ms: Math.round(finalLatency * 0.9),
+            latencyP90Ms: Math.round(finalLatency * 1.3),
+            latencyP99Ms: Math.round(finalLatency * 1.6),
+            timeToFirstTokenMs: Math.round(finalLatency * 0.25),
+            timePerOutputTokenMs: Number((1000 / finalThroughput * taskOutputTokens).toFixed(2)),
+            gpuMemoryUsedGb: Number((30 + Math.random() * 40).toFixed(1)),
+            gpuUtilization: Number((0.6 + Math.random() * 0.35).toFixed(2)),
+            cpuUtilization: Number((0.1 + Math.random() * 0.3).toFixed(2)),
+            errorRate: Number((Math.random() * 0.02).toFixed(4)),
+            totalRequests: taskNumRequests,
+            successRequests: taskNumRequests - Math.floor(Math.random() * 5),
+            failedRequests: Math.floor(Math.random() * 5),
+            detailJson: JSON.stringify({
+              latencyDistribution: [
+                { range: `0-${Math.round(finalLatency * 0.5)}ms`, count: Math.round(taskNumRequests * 0.2) },
+                { range: `${Math.round(finalLatency * 0.5)}-${Math.round(finalLatency * 0.9)}ms`, count: Math.round(taskNumRequests * 0.35) },
+                { range: `${Math.round(finalLatency * 0.9)}-${Math.round(finalLatency * 1.2)}ms`, count: Math.round(taskNumRequests * 0.25) },
+                { range: `${Math.round(finalLatency * 1.2)}-${Math.round(finalLatency * 1.5)}ms`, count: Math.round(taskNumRequests * 0.12) },
+                { range: `${Math.round(finalLatency * 1.5)}-${Math.round(finalLatency * 2)}ms`, count: Math.round(taskNumRequests * 0.05) },
+                { range: `>${Math.round(finalLatency * 2)}ms`, count: Math.round(taskNumRequests * 0.03) }
+              ],
+              throughputTimeline: throughputHistoryRef.current.length > 0
+                ? throughputHistoryRef.current
+                : [{ time: '0s', throughput: finalThroughput }]
+            }),
+          }).catch((err) => {
+            console.error('Failed to save result:', err)
+            toast.error('Failed to save benchmark result')
+          })
+
+          // Update benchmark status to completed
+          editBenchmark(newTask.id, {
+            status: 'completed',
+            progress: 100,
+            completedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          }).catch((err) => {
+            console.error('Failed to update benchmark:', err)
+            toast.error('Failed to update benchmark status')
+          })
+
+          toast.success('Benchmark completed successfully')
+        }
+      }, intervalMs)
+    } catch (err) {
+      console.error('Failed to start benchmark:', err)
+      toast.error('Failed to start benchmark. Please try again.')
+    }
   }, [
     taskName, selectedModelId, selectedProfileId, selectedScenario,
     numRequests, inputTokens, outputTokens, concurrency, duration,
-    models, profiles, addTask, updateTask, addResult, liveMetrics.throughputHistory
+    addBenchmark, editBenchmark, addResult
   ])
 
   // ─── Stop Benchmark Handler ─────────────────────────────────
-  const handleStopBenchmark = useCallback(() => {
+  const handleStopBenchmark = useCallback(async () => {
     if (!runningTaskId) return
     if (simulationRef.current) {
       clearInterval(simulationRef.current)
       simulationRef.current = null
     }
-    updateTask(runningTaskId, {
-      status: 'failed',
-      updatedAt: new Date().toISOString()
-    })
+    try {
+      await editBenchmark(runningTaskId, {
+        status: 'failed',
+        updatedAt: new Date().toISOString()
+      })
+      toast.warning('Benchmark stopped')
+    } catch (err) {
+      console.error('Failed to stop benchmark:', err)
+      toast.error('Failed to update benchmark status')
+    }
     setRunningTaskId(null)
-  }, [runningTaskId, updateTask])
+    setRunningProgress(0)
+  }, [runningTaskId, editBenchmark])
+
+  // ─── Delete Handler ─────────────────────────────────────────
+  const handleDelete = useCallback(async (taskId: string, taskName: string) => {
+    try {
+      await removeBenchmark(taskId)
+      toast.success(`Deleted "${taskName}"`)
+    } catch (err) {
+      console.error('Failed to delete benchmark:', err)
+      toast.error('Failed to delete benchmark')
+    }
+  }, [removeBenchmark])
 
   // ─── Duplicate Task Handler ─────────────────────────────────
-  const handleDuplicate = useCallback((task: BenchmarkTaskInfo) => {
-    const newTask: BenchmarkTaskInfo = {
-      ...task,
-      id: generateId(),
-      name: `${task.name} (Copy)`,
-      status: 'pending',
-      progress: 0,
-      startedAt: null,
-      completedAt: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+  const handleDuplicate = useCallback(async (task: BenchmarkTaskInfo) => {
+    try {
+      await addBenchmark({
+        name: `${task.name} (Copy)`,
+        modelId: task.modelId,
+        profileId: task.profileId,
+        scenario: task.scenario,
+        numRequests: task.numRequests,
+        inputTokens: task.inputTokens,
+        outputTokens: task.outputTokens,
+        concurrency: task.concurrency,
+        duration: task.duration,
+      })
+      toast.success(`Duplicated "${task.name}"`)
+    } catch (err) {
+      console.error('Failed to duplicate benchmark:', err)
+      toast.error('Failed to duplicate benchmark')
     }
-    addTask(newTask)
-  }, [addTask])
+  }, [addBenchmark])
 
   // ─── View Result Handler ────────────────────────────────────
   const handleViewResult = useCallback((task: BenchmarkTaskInfo) => {
@@ -745,7 +623,7 @@ export default function BenchmarkPage() {
 
   // ─── Get Result for Task ────────────────────────────────────
   const getResultForTask = useCallback((taskId: string) => {
-    return results.find(r => r.taskId === taskId)
+    return (results ?? []).find(r => r.taskId === taskId)
   }, [results])
 
   // ─── Sort Icon ──────────────────────────────────────────────
@@ -771,7 +649,13 @@ export default function BenchmarkPage() {
 
   // ─── Result Detail Data ─────────────────────────────────────
   const selectedResult = selectedResultTask ? getResultForTask(selectedResultTask.id) : null
-  const selectedDetailJson = selectedResult ? JSON.parse(selectedResult.detailJson) : null
+  const selectedDetailJson = selectedResult ? (() => {
+    try {
+      return JSON.parse(selectedResult.detailJson)
+    } catch {
+      return null
+    }
+  })() : null
 
   // ─── Render ─────────────────────────────────────────────────
   return (
@@ -863,9 +747,9 @@ export default function BenchmarkPage() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Progress</span>
-                      <span className="font-semibold">{runningTask.progress}%</span>
+                      <span className="font-semibold">{runningProgress}%</span>
                     </div>
-                    <Progress value={runningTask.progress} className="h-2.5" />
+                    <Progress value={runningProgress} className="h-2.5" />
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -931,186 +815,190 @@ export default function BenchmarkPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead
-                        className="cursor-pointer select-none"
-                        onClick={() => handleSort('name')}
-                      >
-                        <span className="flex items-center gap-1">Name <SortIcon field="name" /></span>
-                      </TableHead>
-                      <TableHead>Model</TableHead>
-                      <TableHead
-                        className="cursor-pointer select-none"
-                        onClick={() => handleSort('scenario')}
-                      >
-                        <span className="flex items-center gap-1">Scenario <SortIcon field="scenario" /></span>
-                      </TableHead>
-                      <TableHead
-                        className="cursor-pointer select-none"
-                        onClick={() => handleSort('status')}
-                      >
-                        <span className="flex items-center gap-1">Status <SortIcon field="status" /></span>
-                      </TableHead>
-                      <TableHead>Throughput</TableHead>
-                      <TableHead>Latency P99</TableHead>
-                      <TableHead>Duration</TableHead>
-                      <TableHead
-                        className="cursor-pointer select-none"
-                        onClick={() => handleSort('createdAt')}
-                      >
-                        <span className="flex items-center gap-1">Created <SortIcon field="createdAt" /></span>
-                      </TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredAndSortedTasks.length === 0 ? (
+              {benchmarksLoading ? (
+                <TableSkeleton />
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell colSpan={9} className="h-24 text-center">
-                          <div className="text-muted-foreground flex flex-col items-center gap-2">
-                            <BarChart3 className="size-8 opacity-40" />
-                            <p className="text-sm">No benchmark tasks found</p>
-                            <p className="text-xs">Click &quot;New Benchmark&quot; to create one</p>
-                          </div>
-                        </TableCell>
+                        <TableHead
+                          className="cursor-pointer select-none"
+                          onClick={() => handleSort('name')}
+                        >
+                          <span className="flex items-center gap-1">Name <SortIcon field="name" /></span>
+                        </TableHead>
+                        <TableHead>Model</TableHead>
+                        <TableHead
+                          className="cursor-pointer select-none"
+                          onClick={() => handleSort('scenario')}
+                        >
+                          <span className="flex items-center gap-1">Scenario <SortIcon field="scenario" /></span>
+                        </TableHead>
+                        <TableHead
+                          className="cursor-pointer select-none"
+                          onClick={() => handleSort('status')}
+                        >
+                          <span className="flex items-center gap-1">Status <SortIcon field="status" /></span>
+                        </TableHead>
+                        <TableHead>Throughput</TableHead>
+                        <TableHead>Latency P99</TableHead>
+                        <TableHead>Duration</TableHead>
+                        <TableHead
+                          className="cursor-pointer select-none"
+                          onClick={() => handleSort('createdAt')}
+                        >
+                          <span className="flex items-center gap-1">Created <SortIcon field="createdAt" /></span>
+                        </TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
-                    ) : (
-                      filteredAndSortedTasks.map(task => {
-                        const result = getResultForTask(task.id)
-                        return (
-                          <TableRow key={task.id} className="group">
-                            <TableCell>
-                              <div className="flex flex-col">
-                                <span className="font-medium">{task.name}</span>
-                                <span className="text-muted-foreground text-xs">
-                                  {task.engine?.toUpperCase()} • {task.profileName}
-                                </span>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <span className="flex items-center gap-1.5">
-                                <Server className="text-muted-foreground size-3.5" />
-                                {task.modelName}
-                              </span>
-                            </TableCell>
-                            <TableCell>
-                              <span className={`flex items-center gap-1 text-sm font-medium ${getScenarioColor(task.scenario)}`}>
-                                {getScenarioLabel(task.scenario)}
-                              </span>
-                            </TableCell>
-                            <TableCell>
-                              <StatusBadge status={task.status} />
-                            </TableCell>
-                            <TableCell>
-                              {result ? (
-                                <span className="font-mono text-sm">
-                                  {formatNumber(result.throughputTokensPerSec)} tok/s
-                                </span>
-                              ) : (
-                                <span className="text-muted-foreground">—</span>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              {result ? (
-                                <span className="font-mono text-sm">
-                                  {result.latencyP99Ms}ms
-                                </span>
-                              ) : (
-                                <span className="text-muted-foreground">—</span>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              {task.status === 'running' ? (
-                                <span className="text-blue-600 text-sm">
-                                  {formatDuration(liveMetrics.elapsedSeconds)} / {formatDuration(task.duration)}
-                                </span>
-                              ) : task.completedAt && task.startedAt ? (
-                                <span className="text-sm">
-                                  {formatDuration(Math.round(
-                                    (new Date(task.completedAt).getTime() - new Date(task.startedAt).getTime()) / 1000
-                                  ))}
-                                </span>
-                              ) : (
-                                <span className="text-muted-foreground text-sm">
-                                  {formatDuration(task.duration)}
-                                </span>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <span className="text-muted-foreground text-sm cursor-default">
-                                    {getTimeAgo(task.createdAt)}
+                    </TableHeader>
+                    <TableBody>
+                      {filteredAndSortedTasks.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={9} className="h-24 text-center">
+                            <div className="text-muted-foreground flex flex-col items-center gap-2">
+                              <BarChart3 className="size-8 opacity-40" />
+                              <p className="text-sm">No benchmark tasks found</p>
+                              <p className="text-xs">Click &quot;New Benchmark&quot; to create one</p>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        filteredAndSortedTasks.map(task => {
+                          const result = getResultForTask(task.id)
+                          return (
+                            <TableRow key={task.id} className="group">
+                              <TableCell>
+                                <div className="flex flex-col">
+                                  <span className="font-medium">{task.name}</span>
+                                  <span className="text-muted-foreground text-xs">
+                                    {task.engine?.toUpperCase()} • {task.profileName}
                                   </span>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  {new Date(task.createdAt).toLocaleString()}
-                                </TooltipContent>
-                              </Tooltip>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex items-center justify-end gap-1">
-                                {task.status === 'completed' && (
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <span className="flex items-center gap-1.5">
+                                  <Server className="text-muted-foreground size-3.5" />
+                                  {task.modelName}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <span className={`flex items-center gap-1 text-sm font-medium ${getScenarioColor(task.scenario)}`}>
+                                  {getScenarioLabel(task.scenario)}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <StatusBadge status={task.status} />
+                              </TableCell>
+                              <TableCell>
+                                {result ? (
+                                  <span className="font-mono text-sm">
+                                    {formatNumber(result.throughputTokensPerSec)} tok/s
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {result ? (
+                                  <span className="font-mono text-sm">
+                                    {result.latencyP99Ms}ms
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {task.status === 'running' ? (
+                                  <span className="text-blue-600 text-sm">
+                                    {formatDuration(liveMetrics.elapsedSeconds)} / {formatDuration(task.duration)}
+                                  </span>
+                                ) : task.completedAt && task.startedAt ? (
+                                  <span className="text-sm">
+                                    {formatDuration(Math.round(
+                                      (new Date(task.completedAt).getTime() - new Date(task.startedAt).getTime()) / 1000
+                                    ))}
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground text-sm">
+                                    {formatDuration(task.duration)}
+                                  </span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="text-muted-foreground text-sm cursor-default">
+                                      {getTimeAgo(task.createdAt)}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    {new Date(task.createdAt).toLocaleString()}
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  {task.status === 'completed' && (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="size-8"
+                                          onClick={() => handleViewResult(task)}
+                                        >
+                                          <Eye className="size-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>View Results</TooltipContent>
+                                    </Tooltip>
+                                  )}
                                   <Tooltip>
                                     <TooltipTrigger asChild>
                                       <Button
                                         variant="ghost"
                                         size="icon"
                                         className="size-8"
-                                        onClick={() => handleViewResult(task)}
+                                        onClick={() => handleDuplicate(task)}
                                       >
-                                        <Eye className="size-4" />
+                                        <RotateCcw className="size-4" />
                                       </Button>
                                     </TooltipTrigger>
-                                    <TooltipContent>View Results</TooltipContent>
+                                    <TooltipContent>Duplicate</TooltipContent>
                                   </Tooltip>
-                                )}
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="size-8"
-                                      onClick={() => handleDuplicate(task)}
-                                    >
-                                      <RotateCcw className="size-4" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>Duplicate</TooltipContent>
-                                </Tooltip>
-                                <AlertDialog>
-                                  <AlertDialogTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="size-8">
-                                      <Trash2 className="size-4 text-red-500" />
-                                    </Button>
-                                  </AlertDialogTrigger>
-                                  <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                      <AlertDialogTitle>Delete Benchmark</AlertDialogTitle>
-                                      <AlertDialogDescription>
-                                        Are you sure you want to delete &quot;{task.name}&quot;? This action cannot be undone.
-                                      </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                      <AlertDialogAction onClick={() => removeTask(task.id)}>
-                                        Delete
-                                      </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                  </AlertDialogContent>
-                                </AlertDialog>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        )
-                      })
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+                                  <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                      <Button variant="ghost" size="icon" className="size-8">
+                                        <Trash2 className="size-4 text-red-500" />
+                                      </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle>Delete Benchmark</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                          Are you sure you want to delete &quot;{task.name}&quot;? This action cannot be undone.
+                                        </AlertDialogDescription>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction onClick={() => handleDelete(task.id, task.name)}>
+                                          Delete
+                                        </AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </motion.div>
@@ -1151,7 +1039,7 @@ export default function BenchmarkPage() {
                     <SelectValue placeholder="Select a model" />
                   </SelectTrigger>
                   <SelectContent>
-                    {models.map(model => (
+                    {(models ?? []).map(model => (
                       <SelectItem key={model.id} value={model.id}>
                         <span className="flex items-center gap-2">
                           {model.name}

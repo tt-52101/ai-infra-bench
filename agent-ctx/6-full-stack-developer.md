@@ -1,28 +1,20 @@
-# Task 6 - Parameter Tuning Module
+# Task 6: Update Reports page to use real API data
 
-## Agent: full-stack-developer
+## Task Summary
+Updated the Reports page (`src/components/reports/reports-page.tsx`) to use real API data instead of mock data.
 
-## Summary
-Built the complete Parameter Tuning module for the VLLM/SGLang inference engine model adaptation platform.
+## Key Changes
+1. **Removed mock data**: Deleted `MOCK_RESULTS` (14 entries), `MODELS` hardcoded list, and `MockResult` interface
+2. **Added API hooks**: `useResults()`, `useBenchmarks()`, `useModels()` from `@/hooks/use-api`
+3. **Defined extended types**: `BenchmarkWithRelations`, `ResultWithTask`, `ReportResult` for mapping API data
+4. **Field mappings**: `timeToFirstTokenMs→ttftMs`, `timePerOutputTokenMs→tpotMs`, `gpuMemoryUsedGb→gpuMemGb`, `gpuUtilization→gpuUtil`, `cpuUtilization→cpuUtil`
+5. **Data joining**: Built taskMap from benchmarks data, used to enrich results with model name, engine, scenario, concurrency
+6. **Loading/error/empty states**: Added skeleton components, error banner, empty data message
+7. **Filter dropdowns**: Model filter now uses names from API data
+8. **Export functions**: Added guard for empty data
+9. **Cleanup**: Removed unused imports (TrendingDown, Zap, ArrowDown, Cpu, HardDrive, Line, ReferenceLine, Separator, VLLM_COLOR_LIGHT, SGLANG_COLOR_LIGHT)
 
-## Files Created
-- `/home/z/my-project/src/components/parameters/parameters-page.tsx` - Full parameter tuning page (~1200 lines)
-
-## Files Modified
-- `/home/z/my-project/src/app/page.tsx` - Updated to render ParametersPage
-- `/home/z/my-project/worklog.md` - Appended task log
-
-## Key Features
-1. **Header** - Title, New Profile button, Import Presets button
-2. **Model Selector** - Dropdown with engine type badge (VLLM/SGLang)
-3. **Preset Profiles** - 4 cards (High Throughput, Low Latency, Balanced, Memory Saver)
-4. **Parameter Configuration Form** - 4 accordion sections with sliders, switches, selects, tooltips
-5. **Live Impact Preview** - Memory, Throughput, Latency indicators with progress bars
-6. **Save/Edit Profile Dialog** - Name, description, config summary
-7. **Saved Profiles Table** - Edit, duplicate, delete actions
-8. **SGLang-specific params** - Conditionally shown based on engine type
-9. **Mock data** - 4 models, 4 presets, 3 saved profiles
-10. **Zustand integration** - Uses useAppStore for profiles/models
-
-## Lint Status
-Zero errors in the parameters module (other modules have pre-existing errors)
+## Verification
+- ESLint: 0 errors (1 pre-existing warning in use-api.ts)
+- Dev server compiles successfully
+- API endpoints returning 200 status

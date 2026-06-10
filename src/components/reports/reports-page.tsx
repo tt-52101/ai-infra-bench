@@ -1,9 +1,9 @@
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useCallback } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  Legend, ScatterChart, Scatter, Cell, ComposedChart, Line, ReferenceLine,
+  Legend, ScatterChart, Scatter, Cell, ComposedChart,
 } from 'recharts'
 import {
   Card, CardContent, CardHeader, CardTitle, CardDescription,
@@ -17,11 +17,11 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Separator } from '@/components/ui/separator'
 import {
-  TrendingUp, TrendingDown, Zap, Clock, BarChart3, Download,
-  ArrowUp, ArrowDown, Cpu, HardDrive, Activity, Search,
+  TrendingUp, Clock, BarChart3, Download,
+  ArrowUp, Activity, Search,
   ChevronDown, ChevronUp, Trophy, FileText, FileJson, Clipboard,
+  Loader2, AlertCircle, Scale, Cpu, HardDrive, Zap,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -30,16 +30,37 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
-import type { EngineType, BenchmarkScenario } from '@/lib/types'
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
+import { Progress } from '@/components/ui/progress'
+import { Separator } from '@/components/ui/separator'
+import { useResults, useBenchmarks, useModels } from '@/hooks/use-api'
+import type { EngineType, BenchmarkScenario, BenchmarkResultInfo, BenchmarkTaskInfo } from '@/lib/types'
 
 // ─── Color Constants ─────────────────────────────────────────────
 const VLLM_COLOR = '#10b981'   // emerald-500
 const SGLANG_COLOR = '#f59e0b' // amber-500
-const VLLM_COLOR_LIGHT = '#d1fae5'
-const SGLANG_COLOR_LIGHT = '#fef3c7'
 
-// ─── Mock Data ───────────────────────────────────────────────────
-interface MockResult {
+// ─── Extended API Types ──────────────────────────────────────────
+// The benchmarks API returns nested model/profile/results objects
+interface BenchmarkWithRelations extends BenchmarkTaskInfo {
+  model: { id: string; name: string; engine: EngineType }
+  profile: { id: string; name: string; engine: EngineType }
+  results: BenchmarkResultInfo[]
+}
+
+// The results API returns nested task with model
+interface ResultWithTask extends BenchmarkResultInfo {
+  task: {
+    id: string
+    name: string
+    scenario: BenchmarkScenario
+    concurrency: number
+    model: { id: string; name: string; engine: EngineType }
+  }
+}
+
+// Flat report result used by charts and tables (replaces MockResult)
+interface ReportResult {
   id: string
   model: string
   engine: EngineType
@@ -57,33 +78,9 @@ interface MockResult {
   cpuUtil: number
   errorRate: number
   concurrency: number
+  totalRequests: number
   createdAt: string
 }
-
-const MODELS = ['Qwen2.5-72B', 'Llama-3.1-70B', 'DeepSeek-V2', 'Mistral-7B', 'Yi-1.5-34B']
-
-const MOCK_RESULTS: MockResult[] = [
-  // Qwen2.5-72B
-  { id: 'r1', model: 'Qwen2.5-72B', engine: 'vllm', scenario: 'serving', throughputTokensPerSec: 2840, throughputRequestsPerSec: 14.2, latencyMeanMs: 78, latencyP50Ms: 65, latencyP90Ms: 120, latencyP99Ms: 185, ttftMs: 42, tpotMs: 18, gpuMemGb: 72.4, gpuUtil: 92, cpuUtil: 45, errorRate: 0.2, concurrency: 32, createdAt: '2025-01-15T10:30:00Z' },
-  { id: 'r2', model: 'Qwen2.5-72B', engine: 'sglang', scenario: 'serving', throughputTokensPerSec: 2580, throughputRequestsPerSec: 12.9, latencyMeanMs: 68, latencyP50Ms: 55, latencyP90Ms: 105, latencyP99Ms: 162, ttftMs: 35, tpotMs: 15, gpuMemGb: 70.1, gpuUtil: 88, cpuUtil: 42, errorRate: 0.1, concurrency: 32, createdAt: '2025-01-15T11:00:00Z' },
-  // Llama-3.1-70B
-  { id: 'r3', model: 'Llama-3.1-70B', engine: 'vllm', scenario: 'multi_stream', throughputTokensPerSec: 3120, throughputRequestsPerSec: 15.6, latencyMeanMs: 72, latencyP50Ms: 60, latencyP90Ms: 112, latencyP99Ms: 178, ttftMs: 38, tpotMs: 16, gpuMemGb: 68.5, gpuUtil: 94, cpuUtil: 48, errorRate: 0.3, concurrency: 64, createdAt: '2025-01-16T09:00:00Z' },
-  { id: 'r4', model: 'Llama-3.1-70B', engine: 'sglang', scenario: 'multi_stream', throughputTokensPerSec: 2890, throughputRequestsPerSec: 14.5, latencyMeanMs: 62, latencyP50Ms: 50, latencyP90Ms: 98, latencyP99Ms: 155, ttftMs: 30, tpotMs: 14, gpuMemGb: 66.2, gpuUtil: 89, cpuUtil: 44, errorRate: 0.1, concurrency: 64, createdAt: '2025-01-16T09:30:00Z' },
-  // DeepSeek-V2
-  { id: 'r5', model: 'DeepSeek-V2', engine: 'vllm', scenario: 'single_stream', throughputTokensPerSec: 1920, throughputRequestsPerSec: 9.6, latencyMeanMs: 95, latencyP50Ms: 82, latencyP90Ms: 145, latencyP99Ms: 210, ttftMs: 52, tpotMs: 22, gpuMemGb: 78.3, gpuUtil: 87, cpuUtil: 52, errorRate: 0.5, concurrency: 16, createdAt: '2025-01-17T14:00:00Z' },
-  { id: 'r6', model: 'DeepSeek-V2', engine: 'sglang', scenario: 'single_stream', throughputTokensPerSec: 1750, throughputRequestsPerSec: 8.8, latencyMeanMs: 82, latencyP50Ms: 70, latencyP90Ms: 128, latencyP99Ms: 190, ttftMs: 44, tpotMs: 19, gpuMemGb: 75.8, gpuUtil: 84, cpuUtil: 48, errorRate: 0.2, concurrency: 16, createdAt: '2025-01-17T14:30:00Z' },
-  // Mistral-7B
-  { id: 'r7', model: 'Mistral-7B', engine: 'vllm', scenario: 'burst', throughputTokensPerSec: 8950, throughputRequestsPerSec: 44.8, latencyMeanMs: 28, latencyP50Ms: 22, latencyP90Ms: 42, latencyP99Ms: 68, ttftMs: 12, tpotMs: 6, gpuMemGb: 14.2, gpuUtil: 96, cpuUtil: 35, errorRate: 0.0, concurrency: 128, createdAt: '2025-01-18T08:00:00Z' },
-  { id: 'r8', model: 'Mistral-7B', engine: 'sglang', scenario: 'burst', throughputTokensPerSec: 8320, throughputRequestsPerSec: 41.6, latencyMeanMs: 24, latencyP50Ms: 18, latencyP90Ms: 36, latencyP99Ms: 58, ttftMs: 10, tpotMs: 5, gpuMemGb: 13.8, gpuUtil: 93, cpuUtil: 32, errorRate: 0.0, concurrency: 128, createdAt: '2025-01-18T08:30:00Z' },
-  // Yi-1.5-34B
-  { id: 'r9', model: 'Yi-1.5-34B', engine: 'vllm', scenario: 'serving', throughputTokensPerSec: 4680, throughputRequestsPerSec: 23.4, latencyMeanMs: 48, latencyP50Ms: 40, latencyP90Ms: 72, latencyP99Ms: 112, ttftMs: 25, tpotMs: 10, gpuMemGb: 38.6, gpuUtil: 91, cpuUtil: 40, errorRate: 0.1, concurrency: 64, createdAt: '2025-01-19T11:00:00Z' },
-  { id: 'r10', model: 'Yi-1.5-34B', engine: 'sglang', scenario: 'serving', throughputTokensPerSec: 4350, throughputRequestsPerSec: 21.8, latencyMeanMs: 42, latencyP50Ms: 34, latencyP90Ms: 65, latencyP99Ms: 98, ttftMs: 20, tpotMs: 8, gpuMemGb: 37.2, gpuUtil: 88, cpuUtil: 38, errorRate: 0.0, concurrency: 64, createdAt: '2025-01-19T11:30:00Z' },
-  // Additional scenarios
-  { id: 'r11', model: 'Qwen2.5-72B', engine: 'vllm', scenario: 'burst', throughputTokensPerSec: 3200, throughputRequestsPerSec: 16.0, latencyMeanMs: 85, latencyP50Ms: 72, latencyP90Ms: 130, latencyP99Ms: 198, ttftMs: 48, tpotMs: 20, gpuMemGb: 74.1, gpuUtil: 95, cpuUtil: 50, errorRate: 0.4, concurrency: 64, createdAt: '2025-01-20T09:00:00Z' },
-  { id: 'r12', model: 'Llama-3.1-70B', engine: 'sglang', scenario: 'single_stream', throughputTokensPerSec: 2650, throughputRequestsPerSec: 13.3, latencyMeanMs: 58, latencyP50Ms: 46, latencyP90Ms: 92, latencyP99Ms: 148, ttftMs: 28, tpotMs: 13, gpuMemGb: 65.0, gpuUtil: 86, cpuUtil: 40, errorRate: 0.1, concurrency: 8, createdAt: '2025-01-20T10:00:00Z' },
-  { id: 'r13', model: 'DeepSeek-V2', engine: 'vllm', scenario: 'serving', throughputTokensPerSec: 2100, throughputRequestsPerSec: 10.5, latencyMeanMs: 88, latencyP50Ms: 75, latencyP90Ms: 138, latencyP99Ms: 202, ttftMs: 48, tpotMs: 21, gpuMemGb: 80.1, gpuUtil: 90, cpuUtil: 55, errorRate: 0.3, concurrency: 32, createdAt: '2025-01-21T13:00:00Z' },
-  { id: 'r14', model: 'Mistral-7B', engine: 'vllm', scenario: 'serving', throughputTokensPerSec: 9500, throughputRequestsPerSec: 47.5, latencyMeanMs: 25, latencyP50Ms: 20, latencyP90Ms: 38, latencyP99Ms: 62, ttftMs: 11, tpotMs: 5, gpuMemGb: 14.8, gpuUtil: 97, cpuUtil: 36, errorRate: 0.0, concurrency: 256, createdAt: '2025-01-21T14:00:00Z' },
-]
 
 // ─── Custom Tooltip Components ───────────────────────────────────
 function ThroughputTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number; dataKey: string; color: string }>; label?: string }) {
@@ -102,7 +99,7 @@ function ThroughputTooltip({ active, payload, label }: { active?: boolean; paylo
   )
 }
 
-function ScatterTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: MockResult }> }) {
+function ScatterTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: ReportResult }> }) {
   if (!active || !payload?.length) return null
   const d = payload[0].payload
   return (
@@ -120,7 +117,7 @@ function ScatterTooltip({ active, payload }: { active?: boolean; payload?: Array
 }
 
 // ─── Performance Color Helper ────────────────────────────────────
-function getPerformanceColor(value: number, metric: 'throughput' | 'latency' | 'gpu' | 'error', engine?: EngineType): string {
+function getPerformanceColor(value: number, metric: 'throughput' | 'latency' | 'gpu' | 'error'): string {
   if (metric === 'throughput') {
     if (value > 5000) return 'text-emerald-600'
     if (value > 2000) return 'text-yellow-600'
@@ -144,6 +141,39 @@ function getPerformanceColor(value: number, metric: 'throughput' | 'latency' | '
   return ''
 }
 
+// ─── Loading Skeleton ────────────────────────────────────────────
+function SkeletonCard() {
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="flex items-center gap-3 animate-pulse">
+          <div className="p-2 rounded-lg bg-muted w-9 h-9" />
+          <div className="space-y-2 flex-1">
+            <div className="h-3 bg-muted rounded w-20" />
+            <div className="h-6 bg-muted rounded w-28" />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function SkeletonChart() {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="h-5 bg-muted rounded w-40 animate-pulse" />
+        <div className="h-4 bg-muted rounded w-64 animate-pulse mt-1" />
+      </CardHeader>
+      <CardContent>
+        <div className="h-[400px] bg-muted/30 rounded animate-pulse flex items-center justify-center">
+          <Loader2 className="w-8 h-8 text-muted-foreground animate-spin" />
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 // ─── Main Component ──────────────────────────────────────────────
 export default function ReportsPage() {
   const [modelFilter, setModelFilter] = useState<string>('all')
@@ -152,16 +182,105 @@ export default function ReportsPage() {
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
   const [sortCol, setSortCol] = useState<string>('throughputTokensPerSec')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [compareOpen, setCompareOpen] = useState(false)
+  const [compareA, setCompareA] = useState<string>('')
+  const [compareB, setCompareB] = useState<string>('')
+
+  // ─── API Data ────────────────────────────────────────────────
+  const { data: resultsRaw, loading: resultsLoading, error: resultsError } = useResults()
+  const { data: benchmarksRaw, loading: benchmarksLoading } = useBenchmarks()
+  const { data: models } = useModels()
+
+  const isLoading = resultsLoading || benchmarksLoading
+
+  // Build a map from taskId → task info (for concurrency, scenario, model name, engine)
+  const taskMap = useMemo(() => {
+    const map = new Map<string, {
+      scenario: BenchmarkScenario
+      concurrency: number
+      modelName: string
+      engine: EngineType
+    }>()
+    if (!benchmarksRaw) return map
+    for (const task of benchmarksRaw as BenchmarkWithRelations[]) {
+      const modelName = task.model?.name ?? task.modelName ?? 'Unknown'
+      const engine = task.model?.engine ?? task.engine ?? 'vllm'
+      map.set(task.id, {
+        scenario: task.scenario,
+        concurrency: task.concurrency,
+        modelName,
+        engine,
+      })
+    }
+    return map
+  }, [benchmarksRaw])
+
+  // Transform API results to flat ReportResult structure
+  const reportResults: ReportResult[] = useMemo(() => {
+    if (!resultsRaw) return []
+    const mapped: ReportResult[] = []
+    for (const r of resultsRaw as ResultWithTask[]) {
+      // Try to get task info from the nested task object in the result response first
+      const taskInfo = r.task
+        ? {
+            scenario: r.task.scenario ?? 'serving',
+            concurrency: r.task.concurrency ?? 1,
+            modelName: r.task.model?.name ?? 'Unknown',
+            engine: r.task.model?.engine ?? 'vllm' as EngineType,
+          }
+        : taskMap.get(r.taskId)
+
+      // If no task info from either source, use defaults
+      const scenario = taskInfo?.scenario ?? 'serving'
+      const concurrency = taskInfo?.concurrency ?? 1
+      const modelName = taskInfo?.modelName ?? 'Unknown'
+      const engine = taskInfo?.engine ?? 'vllm'
+
+      mapped.push({
+        id: r.id,
+        model: modelName,
+        engine,
+        scenario,
+        throughputTokensPerSec: r.throughputTokensPerSec,
+        throughputRequestsPerSec: r.throughputRequestsPerSec,
+        latencyMeanMs: r.latencyMeanMs,
+        latencyP50Ms: r.latencyP50Ms,
+        latencyP90Ms: r.latencyP90Ms,
+        latencyP99Ms: r.latencyP99Ms,
+        ttftMs: r.timeToFirstTokenMs,
+        tpotMs: r.timePerOutputTokenMs,
+        gpuMemGb: r.gpuMemoryUsedGb,
+        gpuUtil: r.gpuUtilization,
+        cpuUtil: r.cpuUtilization,
+        errorRate: r.errorRate,
+        concurrency,
+        totalRequests: r.totalRequests,
+        createdAt: r.createdAt,
+      })
+    }
+    return mapped
+  }, [resultsRaw, taskMap])
+
+  // Unique model names from API data for filter dropdown
+  const modelNames = useMemo(() => {
+    const names = new Set<string>()
+    if (models) {
+      for (const m of models) names.add(m.name)
+    }
+    // Also add from results in case models list is empty
+    for (const r of reportResults) names.add(r.model)
+    return Array.from(names).sort()
+  }, [models, reportResults])
 
   // Filtered data
   const filtered = useMemo(() => {
-    return MOCK_RESULTS.filter((r) => {
+    return reportResults.filter((r) => {
       if (modelFilter !== 'all' && r.model !== modelFilter) return false
       if (engineFilter !== 'all' && r.engine !== engineFilter) return false
       if (scenarioFilter !== 'all' && r.scenario !== scenarioFilter) return false
       return true
     })
-  }, [modelFilter, engineFilter, scenarioFilter])
+  }, [reportResults, modelFilter, engineFilter, scenarioFilter])
 
   // Sorted data for table
   const sorted = useMemo(() => {
@@ -245,8 +364,14 @@ export default function ReportsPage() {
   }, [filtered])
 
   // ─── Summary Stats ────────────────────────────────────────────
-  const bestThroughput = useMemo(() => Math.max(...filtered.map((r) => r.throughputTokensPerSec)), [filtered])
-  const bestLatency = useMemo(() => Math.min(...filtered.map((r) => r.latencyP99Ms)), [filtered])
+  const bestThroughput = useMemo(() => {
+    if (filtered.length === 0) return 0
+    return Math.max(...filtered.map((r) => r.throughputTokensPerSec))
+  }, [filtered])
+  const bestLatency = useMemo(() => {
+    if (filtered.length === 0) return 0
+    return Math.min(...filtered.map((r) => r.latencyP99Ms))
+  }, [filtered])
   const totalTests = filtered.length
 
   const vllmAvgThroughput = useMemo(() => {
@@ -292,6 +417,10 @@ export default function ReportsPage() {
   ]
 
   const exportAsCSV = () => {
+    if (filtered.length === 0) {
+      toast.error('No data to export')
+      return
+    }
     const headerRow = csvHeaders.join(',')
     const dataRows = filtered.map((r) =>
       [
@@ -327,6 +456,10 @@ export default function ReportsPage() {
   }
 
   const exportAsJSON = () => {
+    if (filtered.length === 0) {
+      toast.error('No data to export')
+      return
+    }
     const payload = {
       metadata: {
         exportDate: new Date().toISOString(),
@@ -349,6 +482,10 @@ export default function ReportsPage() {
   }
 
   const copyToClipboard = async () => {
+    if (filtered.length === 0) {
+      toast.error('No data to copy')
+      return
+    }
     const headerRow = csvHeaders.join('\t')
     const dataRows = filtered.map((r) =>
       [
@@ -384,6 +521,183 @@ export default function ReportsPage() {
     { name: 'Avg GPU Util', vllm: filtered.filter(r => r.engine === 'vllm').reduce((s, r) => s + r.gpuUtil, 0) / (filtered.filter(r => r.engine === 'vllm').length || 1), sglang: filtered.filter(r => r.engine === 'sglang').reduce((s, r) => s + r.gpuUtil, 0) / (filtered.filter(r => r.engine === 'sglang').length || 1), unit: '%', higher: true },
   ]
 
+  // ─── Benchmark Comparison ──────────────────────────────────────
+  const getResultLabel = useCallback((r: ReportResult) => {
+    const engineTag = r.engine === 'vllm' ? 'VLLM' : 'SGLang'
+    const scenario = r.scenario.replace(/_/g, ' ')
+    return `${r.model} · ${engineTag} · ${scenario} · ${r.throughputTokensPerSec.toLocaleString()} tok/s`
+  }, [])
+
+  const selectedA = useMemo(() => reportResults.find((r) => r.id === compareA) ?? null, [reportResults, compareA])
+  const selectedB = useMemo(() => reportResults.find((r) => r.id === compareB) ?? null, [reportResults, compareB])
+
+  const isSameResult = compareA !== '' && compareA === compareB
+
+  // Comparison metrics for side-by-side
+  const compareMetrics = useMemo(() => {
+    if (!selectedA || !selectedB) return []
+    return [
+      {
+        label: 'Throughput (tok/s)',
+        icon: <TrendingUp className="w-4 h-4" />,
+        a: selectedA.throughputTokensPerSec,
+        b: selectedB.throughputTokensPerSec,
+        unit: 'tok/s',
+        higher: true,
+        format: (v: number) => v.toLocaleString(),
+      },
+      {
+        label: 'Latency P50 (ms)',
+        icon: <Clock className="w-4 h-4" />,
+        a: selectedA.latencyP50Ms,
+        b: selectedB.latencyP50Ms,
+        unit: 'ms',
+        higher: false,
+        format: (v: number) => v.toFixed(1),
+      },
+      {
+        label: 'Latency P90 (ms)',
+        icon: <Clock className="w-4 h-4" />,
+        a: selectedA.latencyP90Ms,
+        b: selectedB.latencyP90Ms,
+        unit: 'ms',
+        higher: false,
+        format: (v: number) => v.toFixed(1),
+      },
+      {
+        label: 'Latency P99 (ms)',
+        icon: <Clock className="w-4 h-4" />,
+        a: selectedA.latencyP99Ms,
+        b: selectedB.latencyP99Ms,
+        unit: 'ms',
+        higher: false,
+        format: (v: number) => v.toFixed(1),
+      },
+      {
+        label: 'TTFT (ms)',
+        icon: <Zap className="w-4 h-4" />,
+        a: selectedA.ttftMs,
+        b: selectedB.ttftMs,
+        unit: 'ms',
+        higher: false,
+        format: (v: number) => v.toFixed(1),
+      },
+      {
+        label: 'TPOT (ms)',
+        icon: <Zap className="w-4 h-4" />,
+        a: selectedA.tpotMs,
+        b: selectedB.tpotMs,
+        unit: 'ms',
+        higher: false,
+        format: (v: number) => v.toFixed(1),
+      },
+      {
+        label: 'GPU Memory (GB)',
+        icon: <HardDrive className="w-4 h-4" />,
+        a: selectedA.gpuMemGb,
+        b: selectedB.gpuMemGb,
+        unit: 'GB',
+        higher: false,
+        format: (v: number) => v.toFixed(1),
+      },
+      {
+        label: 'GPU Utilization (%)',
+        icon: <Cpu className="w-4 h-4" />,
+        a: selectedA.gpuUtil,
+        b: selectedB.gpuUtil,
+        unit: '%',
+        higher: true,
+        format: (v: number) => v.toFixed(1),
+      },
+      {
+        label: 'CPU Utilization (%)',
+        icon: <Cpu className="w-4 h-4" />,
+        a: selectedA.cpuUtil,
+        b: selectedB.cpuUtil,
+        unit: '%',
+        higher: true,
+        format: (v: number) => v.toFixed(1),
+      },
+      {
+        label: 'Error Rate (%)',
+        icon: <AlertCircle className="w-4 h-4" />,
+        a: selectedA.errorRate,
+        b: selectedB.errorRate,
+        unit: '%',
+        higher: false,
+        format: (v: number) => v.toFixed(2),
+      },
+    ]
+  }, [selectedA, selectedB])
+
+  // Overall score
+  const overallScore = useMemo(() => {
+    if (compareMetrics.length === 0) return { aWins: 0, bWins: 0, total: 0, aPct: 0, bPct: 0 }
+    let aWins = 0
+    let bWins = 0
+    for (const m of compareMetrics) {
+      const aWinsMetric = m.higher ? m.a > m.b : m.a < m.b
+      const bWinsMetric = m.higher ? m.b > m.a : m.b < m.a
+      if (aWinsMetric) aWins++
+      if (bWinsMetric) bWins++
+    }
+    const total = compareMetrics.length
+    return {
+      aWins,
+      bWins,
+      total,
+      aPct: Math.round((aWins / total) * 100),
+      bPct: Math.round((bWins / total) * 100),
+    }
+  }, [compareMetrics])
+
+  // ─── Loading State ────────────────────────────────────────────
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Performance Reports</h1>
+            <p className="text-muted-foreground text-sm mt-1">
+              Comprehensive benchmark analysis across models and inference engines
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Loading data...</span>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
+        </div>
+        <SkeletonChart />
+      </div>
+    )
+  }
+
+  // ─── Error State ──────────────────────────────────────────────
+  if (resultsError) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Performance Reports</h1>
+            <p className="text-muted-foreground text-sm mt-1">
+              Comprehensive benchmark analysis across models and inference engines
+            </p>
+          </div>
+        </div>
+        <Card>
+          <CardContent className="p-8 text-center">
+            <AlertCircle className="w-12 h-12 text-destructive mx-auto mb-4" />
+            <h3 className="text-lg font-semibold mb-2">Failed to Load Data</h3>
+            <p className="text-muted-foreground text-sm">{resultsError}</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* ─── Header ──────────────────────────────────────────── */}
@@ -401,7 +715,7 @@ export default function ReportsPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Models</SelectItem>
-              {MODELS.map((m) => (
+              {modelNames.map((m) => (
                 <SelectItem key={m} value={m}>{m}</SelectItem>
               ))}
             </SelectContent>
@@ -426,8 +740,19 @@ export default function ReportsPage() {
               <SelectItem value="multi_stream">Multi Stream</SelectItem>
               <SelectItem value="burst">Burst</SelectItem>
               <SelectItem value="serving">Serving</SelectItem>
+              <SelectItem value="custom">Custom</SelectItem>
             </SelectContent>
           </Select>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => setCompareOpen(true)}
+            disabled={reportResults.length < 2}
+          >
+            <Scale className="w-4 h-4" />
+            Compare
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="gap-1.5">
@@ -463,7 +788,7 @@ export default function ReportsPage() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Best Throughput</p>
-                <p className="text-2xl font-bold tabular-nums">{bestThroughput.toLocaleString()} <span className="text-sm font-normal text-muted-foreground">tok/s</span></p>
+                <p className="text-2xl font-bold tabular-nums">{bestThroughput > 0 ? bestThroughput.toLocaleString() : 'N/A'} <span className="text-sm font-normal text-muted-foreground">tok/s</span></p>
               </div>
             </div>
           </CardContent>
@@ -476,7 +801,7 @@ export default function ReportsPage() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Best Latency P99</p>
-                <p className="text-2xl font-bold tabular-nums">{bestLatency} <span className="text-sm font-normal text-muted-foreground">ms</span></p>
+                <p className="text-2xl font-bold tabular-nums">{bestLatency > 0 ? bestLatency : 'N/A'} <span className="text-sm font-normal text-muted-foreground">ms</span></p>
               </div>
             </div>
           </CardContent>
@@ -513,287 +838,805 @@ export default function ReportsPage() {
         </Card>
       </div>
 
+      {/* ─── Empty State ─────────────────────────────────────── */}
+      {reportResults.length === 0 && !isLoading && (
+        <Card>
+          <CardContent className="p-8 text-center">
+            <BarChart3 className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+            <h3 className="text-lg font-semibold mb-2">No Benchmark Results</h3>
+            <p className="text-muted-foreground text-sm">
+              Run some benchmarks first to see performance reports and comparisons here.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* ─── Charts Section ──────────────────────────────────── */}
-      <Tabs defaultValue="throughput" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="throughput">Throughput</TabsTrigger>
-          <TabsTrigger value="latency">Latency</TabsTrigger>
-          <TabsTrigger value="scatter">Throughput vs Latency</TabsTrigger>
-          <TabsTrigger value="ttft">TTFT & TPOT</TabsTrigger>
-        </TabsList>
+      {reportResults.length > 0 && (
+        <Tabs defaultValue="throughput" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="throughput">Throughput</TabsTrigger>
+            <TabsTrigger value="latency">Latency</TabsTrigger>
+            <TabsTrigger value="scatter">Throughput vs Latency</TabsTrigger>
+            <TabsTrigger value="ttft">TTFT & TPOT</TabsTrigger>
+          </TabsList>
 
-        {/* ─── Throughput Comparison ──────────────────────────── */}
-        <TabsContent value="throughput">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Throughput Comparison</CardTitle>
-              <CardDescription>Peak throughput (tokens/s) by model — VLLM vs SGLang</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[400px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={throughputComparisonData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="model" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} label={{ value: 'Tokens/s', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }} />
-                    <Tooltip content={<ThroughputTooltip />} />
-                    <Legend
-                      formatter={(value: string) => (value === 'vllm' ? 'VLLM' : 'SGLang')}
-                      wrapperStyle={{ fontSize: 12 }}
-                    />
-                    <Bar dataKey="vllm" fill={VLLM_COLOR} radius={[4, 4, 0, 0]} barSize={28} />
-                    <Bar dataKey="sglang" fill={SGLANG_COLOR} radius={[4, 4, 0, 0]} barSize={28} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+          {/* ─── Throughput Comparison ──────────────────────────── */}
+          <TabsContent value="throughput">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Throughput Comparison</CardTitle>
+                <CardDescription>Peak throughput (tokens/s) by model — VLLM vs SGLang</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {throughputComparisonData.length > 0 ? (
+                  <div className="h-[400px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={throughputComparisonData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                        <XAxis dataKey="model" tick={{ fontSize: 12 }} />
+                        <YAxis tick={{ fontSize: 12 }} label={{ value: 'Tokens/s', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }} />
+                        <Tooltip content={<ThroughputTooltip />} />
+                        <Legend
+                          formatter={(value: string) => (value === 'vllm' ? 'VLLM' : 'SGLang')}
+                          wrapperStyle={{ fontSize: 12 }}
+                        />
+                        <Bar dataKey="vllm" fill={VLLM_COLOR} radius={[4, 4, 0, 0]} barSize={28} />
+                        <Bar dataKey="sglang" fill={SGLANG_COLOR} radius={[4, 4, 0, 0]} barSize={28} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="h-[400px] flex items-center justify-center text-muted-foreground text-sm">
+                    No data available for the selected filters.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-        {/* ─── Latency Distribution ───────────────────────────── */}
-        <TabsContent value="latency">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Latency Distribution</CardTitle>
-              <CardDescription>P50, P90, P99 latency (ms) per model and engine</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[400px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={latencyData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={60} />
-                    <YAxis tick={{ fontSize: 12 }} label={{ value: 'Latency (ms)', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }} />
-                    <Tooltip
-                      contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                      formatter={(value: number, name: string) => [`${value} ms`, name]}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Bar dataKey="p50" name="P50" fill="#94a3b8" radius={[2, 2, 0, 0]} barSize={10} />
-                    <Bar dataKey="p90" name="P90" fill="#f59e0b" radius={[2, 2, 0, 0]} barSize={10} />
-                    <Bar dataKey="p99" name="P99" fill="#ef4444" radius={[2, 2, 0, 0]} barSize={10} />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+          {/* ─── Latency Distribution ───────────────────────────── */}
+          <TabsContent value="latency">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Latency Distribution</CardTitle>
+                <CardDescription>P50, P90, P99 latency (ms) per model and engine</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {latencyData.length > 0 ? (
+                  <div className="h-[400px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={latencyData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                        <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={60} />
+                        <YAxis tick={{ fontSize: 12 }} label={{ value: 'Latency (ms)', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }} />
+                        <Tooltip
+                          contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                          formatter={(value: number, name: string) => [`${value} ms`, name]}
+                        />
+                        <Legend wrapperStyle={{ fontSize: 12 }} />
+                        <Bar dataKey="p50" name="P50" fill="#94a3b8" radius={[2, 2, 0, 0]} barSize={10} />
+                        <Bar dataKey="p90" name="P90" fill="#f59e0b" radius={[2, 2, 0, 0]} barSize={10} />
+                        <Bar dataKey="p99" name="P99" fill="#ef4444" radius={[2, 2, 0, 0]} barSize={10} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="h-[400px] flex items-center justify-center text-muted-foreground text-sm">
+                    No data available for the selected filters.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-        {/* ─── Throughput vs Latency Scatter ──────────────────── */}
-        <TabsContent value="scatter">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Throughput vs Latency (P99)</CardTitle>
-              <CardDescription>Bubble size indicates concurrency level. Color indicates engine type.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[400px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ScatterChart margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis
-                      type="number"
-                      dataKey="x"
-                      name="Throughput"
-                      tick={{ fontSize: 12 }}
-                      label={{ value: 'Throughput (tok/s)', position: 'insideBottom', offset: -2, style: { fontSize: 12 } }}
-                    />
-                    <YAxis
-                      type="number"
-                      dataKey="y"
-                      name="Latency P99"
-                      tick={{ fontSize: 12 }}
-                      label={{ value: 'Latency P99 (ms)', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
-                    />
-                    <Tooltip content={<ScatterTooltip />} />
-                    <Legend
-                      formatter={(value: string) => (value === 'vllm' ? 'VLLM' : 'SGLang')}
-                      wrapperStyle={{ fontSize: 12 }}
-                    />
-                    <Scatter name="vllm" data={scatterData.filter((d) => d.engine === 'vllm')} fill={VLLM_COLOR}>
-                      {scatterData.filter((d) => d.engine === 'vllm').map((entry, idx) => (
-                        <Cell key={`v-${idx}`} fill={VLLM_COLOR} fillOpacity={0.7} r={Math.max(4, Math.sqrt(entry.z) * 1.5)} />
-                      ))}
-                    </Scatter>
-                    <Scatter name="sglang" data={scatterData.filter((d) => d.engine === 'sglang')} fill={SGLANG_COLOR}>
-                      {scatterData.filter((d) => d.engine === 'sglang').map((entry, idx) => (
-                        <Cell key={`s-${idx}`} fill={SGLANG_COLOR} fillOpacity={0.7} r={Math.max(4, Math.sqrt(entry.z) * 1.5)} />
-                      ))}
-                    </Scatter>
-                  </ScatterChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+          {/* ─── Throughput vs Latency Scatter ──────────────────── */}
+          <TabsContent value="scatter">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Throughput vs Latency (P99)</CardTitle>
+                <CardDescription>Bubble size indicates concurrency level. Color indicates engine type.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {scatterData.length > 0 ? (
+                  <div className="h-[400px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ScatterChart margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                        <XAxis
+                          type="number"
+                          dataKey="x"
+                          name="Throughput"
+                          tick={{ fontSize: 12 }}
+                          label={{ value: 'Throughput (tok/s)', position: 'insideBottom', offset: -2, style: { fontSize: 12 } }}
+                        />
+                        <YAxis
+                          type="number"
+                          dataKey="y"
+                          name="Latency P99"
+                          tick={{ fontSize: 12 }}
+                          label={{ value: 'Latency P99 (ms)', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
+                        />
+                        <Tooltip content={<ScatterTooltip />} />
+                        <Legend
+                          formatter={(value: string) => (value === 'vllm' ? 'VLLM' : 'SGLang')}
+                          wrapperStyle={{ fontSize: 12 }}
+                        />
+                        <Scatter name="vllm" data={scatterData.filter((d) => d.engine === 'vllm')} fill={VLLM_COLOR}>
+                          {scatterData.filter((d) => d.engine === 'vllm').map((entry, idx) => (
+                            <Cell key={`v-${idx}`} fill={VLLM_COLOR} fillOpacity={0.7} r={Math.max(4, Math.sqrt(entry.z) * 1.5)} />
+                          ))}
+                        </Scatter>
+                        <Scatter name="sglang" data={scatterData.filter((d) => d.engine === 'sglang')} fill={SGLANG_COLOR}>
+                          {scatterData.filter((d) => d.engine === 'sglang').map((entry, idx) => (
+                            <Cell key={`s-${idx}`} fill={SGLANG_COLOR} fillOpacity={0.7} r={Math.max(4, Math.sqrt(entry.z) * 1.5)} />
+                          ))}
+                        </Scatter>
+                      </ScatterChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="h-[400px] flex items-center justify-center text-muted-foreground text-sm">
+                    No data available for the selected filters.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-        {/* ─── TTFT & TPOT ────────────────────────────────────── */}
-        <TabsContent value="ttft">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">TTFT & TPOT Comparison</CardTitle>
-              <CardDescription>Time to First Token (ms) and Time per Output Token (ms) by model</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[400px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={ttftTpotData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="model" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} label={{ value: 'Time (ms)', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }} />
-                    <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Bar dataKey="VLLM TTFT" fill={VLLM_COLOR} radius={[3, 3, 0, 0]} barSize={14} />
-                    <Bar dataKey="SGLang TTFT" fill={SGLANG_COLOR} radius={[3, 3, 0, 0]} barSize={14} />
-                    <Bar dataKey="VLLM TPOT" fill="#6ee7b7" radius={[3, 3, 0, 0]} barSize={14} />
-                    <Bar dataKey="SGLang TPOT" fill="#fcd34d" radius={[3, 3, 0, 0]} barSize={14} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+          {/* ─── TTFT & TPOT ────────────────────────────────────── */}
+          <TabsContent value="ttft">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">TTFT & TPOT Comparison</CardTitle>
+                <CardDescription>Time to First Token (ms) and Time per Output Token (ms) by model</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {ttftTpotData.length > 0 ? (
+                  <div className="h-[400px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={ttftTpotData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                        <XAxis dataKey="model" tick={{ fontSize: 12 }} />
+                        <YAxis tick={{ fontSize: 12 }} label={{ value: 'Time (ms)', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }} />
+                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                        <Legend wrapperStyle={{ fontSize: 12 }} />
+                        <Bar dataKey="VLLM TTFT" fill={VLLM_COLOR} radius={[3, 3, 0, 0]} barSize={14} />
+                        <Bar dataKey="SGLang TTFT" fill={SGLANG_COLOR} radius={[3, 3, 0, 0]} barSize={14} />
+                        <Bar dataKey="VLLM TPOT" fill="#6ee7b7" radius={[3, 3, 0, 0]} barSize={14} />
+                        <Bar dataKey="SGLang TPOT" fill="#fcd34d" radius={[3, 3, 0, 0]} barSize={14} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="h-[400px] flex items-center justify-center text-muted-foreground text-sm">
+                    No data available for the selected filters.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      )}
 
       {/* ─── VLLM vs SGLang Comparison ───────────────────────── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Trophy className="w-5 h-5 text-amber-500" />
-            VLLM vs SGLang Engine Comparison
-          </CardTitle>
-          <CardDescription>Side-by-side performance comparison across key metrics</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            {comparisonMetrics.map((m) => {
-              const vllmWins = m.higher ? m.vllm > m.sglang : m.vllm < m.sglang
-              const sglangWins = m.higher ? m.sglang > m.vllm : m.sglang < m.vllm
-              return (
-                <div key={m.name} className="border rounded-lg p-4 space-y-3">
-                  <p className="text-xs font-medium text-muted-foreground text-center">{m.name}</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className={`text-center p-2 rounded-md ${vllmWins ? 'bg-emerald-50 ring-1 ring-emerald-200' : 'bg-muted/50'}`}>
-                      <p className="text-[10px] text-muted-foreground mb-1">VLLM</p>
-                      <p className="text-sm font-bold tabular-nums" style={{ color: VLLM_COLOR }}>
-                        {typeof m.vllm === 'number' && isFinite(m.vllm) ? m.vllm.toFixed(1) : 'N/A'}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">{m.unit}</p>
-                      {vllmWins && (
-                        <Badge variant="secondary" className="mt-1 text-[10px] bg-emerald-100 text-emerald-700 border-0">
-                          <ArrowUp className="w-2.5 h-2.5 mr-0.5" /> Winner
-                        </Badge>
-                      )}
-                    </div>
-                    <div className={`text-center p-2 rounded-md ${sglangWins ? 'bg-amber-50 ring-1 ring-amber-200' : 'bg-muted/50'}`}>
-                      <p className="text-[10px] text-muted-foreground mb-1">SGLang</p>
-                      <p className="text-sm font-bold tabular-nums" style={{ color: SGLANG_COLOR }}>
-                        {typeof m.sglang === 'number' && isFinite(m.sglang) ? m.sglang.toFixed(1) : 'N/A'}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">{m.unit}</p>
-                      {sglangWins && (
-                        <Badge variant="secondary" className="mt-1 text-[10px] bg-amber-100 text-amber-700 border-0">
-                          <ArrowUp className="w-2.5 h-2.5 mr-0.5" /> Winner
-                        </Badge>
-                      )}
+      {reportResults.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Trophy className="w-5 h-5 text-amber-500" />
+              VLLM vs SGLang Engine Comparison
+            </CardTitle>
+            <CardDescription>Side-by-side performance comparison across key metrics</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              {comparisonMetrics.map((m) => {
+                const vllmWins = m.higher ? m.vllm > m.sglang : m.vllm < m.sglang
+                const sglangWins = m.higher ? m.sglang > m.vllm : m.sglang < m.vllm
+                return (
+                  <div key={m.name} className="border rounded-lg p-4 space-y-3">
+                    <p className="text-xs font-medium text-muted-foreground text-center">{m.name}</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className={`text-center p-2 rounded-md ${vllmWins ? 'bg-emerald-50 ring-1 ring-emerald-200' : 'bg-muted/50'}`}>
+                        <p className="text-[10px] text-muted-foreground mb-1">VLLM</p>
+                        <p className="text-sm font-bold tabular-nums" style={{ color: VLLM_COLOR }}>
+                          {typeof m.vllm === 'number' && isFinite(m.vllm) && m.vllm > 0 ? m.vllm.toFixed(1) : 'N/A'}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">{m.unit}</p>
+                        {vllmWins && m.vllm > 0 && (
+                          <Badge variant="secondary" className="mt-1 text-[10px] bg-emerald-100 text-emerald-700 border-0">
+                            <ArrowUp className="w-2.5 h-2.5 mr-0.5" /> Winner
+                          </Badge>
+                        )}
+                      </div>
+                      <div className={`text-center p-2 rounded-md ${sglangWins ? 'bg-amber-50 ring-1 ring-amber-200' : 'bg-muted/50'}`}>
+                        <p className="text-[10px] text-muted-foreground mb-1">SGLang</p>
+                        <p className="text-sm font-bold tabular-nums" style={{ color: SGLANG_COLOR }}>
+                          {typeof m.sglang === 'number' && isFinite(m.sglang) && m.sglang > 0 ? m.sglang.toFixed(1) : 'N/A'}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">{m.unit}</p>
+                        {sglangWins && m.sglang > 0 && (
+                          <Badge variant="secondary" className="mt-1 text-[10px] bg-amber-100 text-amber-700 border-0">
+                            <ArrowUp className="w-2.5 h-2.5 mr-0.5" /> Winner
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              )
-            })}
-          </div>
-        </CardContent>
-      </Card>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ─── Detailed Results Table ──────────────────────────── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Search className="w-5 h-5" />
-            Detailed Benchmark Results
-          </CardTitle>
-          <CardDescription>
-            Click any row to expand full details. Sorted by {sortCol.replace(/([A-Z])/g, ' $1').toLowerCase()} ({sortDir === 'desc' ? 'descending' : 'ascending'}).
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="cursor-pointer select-none" onClick={() => handleSort('model')}>
-                    <span className="flex items-center gap-1">Model {renderSortIcon('model')}</span>
-                  </TableHead>
-                  <TableHead>Engine</TableHead>
-                  <TableHead>Scenario</TableHead>
-                  <TableHead className="cursor-pointer select-none" onClick={() => handleSort('throughputTokensPerSec')}>
-                    <span className="flex items-center gap-1">Throughput (tok/s) {renderSortIcon('throughputTokensPerSec')}</span>
-                  </TableHead>
-                  <TableHead className="cursor-pointer select-none" onClick={() => handleSort('latencyP99Ms')}>
-                    <span className="flex items-center gap-1">Latency P99 (ms) {renderSortIcon('latencyP99Ms')}</span>
-                  </TableHead>
-                  <TableHead>TTFT (ms)</TableHead>
-                  <TableHead>GPU Mem (GB)</TableHead>
-                  <TableHead className="cursor-pointer select-none" onClick={() => handleSort('gpuUtil')}>
-                    <span className="flex items-center gap-1">GPU Util (%) {renderSortIcon('gpuUtil')}</span>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sorted.map((r) => (
-                  <React.Fragment key={r.id}>
-                    <TableRow
-                      className="cursor-pointer hover:bg-muted/60"
-                      onClick={() => setExpandedRow(expandedRow === r.id ? null : r.id)}
-                    >
-                      <TableCell className="font-medium text-sm">{r.model}</TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="outline"
-                          className="text-xs"
-                          style={{ color: r.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR, borderColor: r.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR }}
-                        >
-                          {r.engine === 'vllm' ? 'VLLM' : 'SGLang'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-sm capitalize">{r.scenario.replace('_', ' ')}</TableCell>
-                      <TableCell className={`font-mono text-sm font-medium ${getPerformanceColor(r.throughputTokensPerSec, 'throughput')}`}>
-                        {r.throughputTokensPerSec.toLocaleString()}
-                      </TableCell>
-                      <TableCell className={`font-mono text-sm font-medium ${getPerformanceColor(r.latencyP99Ms, 'latency')}`}>
-                        {r.latencyP99Ms}
-                      </TableCell>
-                      <TableCell className="font-mono text-sm">{r.ttftMs}</TableCell>
-                      <TableCell className="font-mono text-sm">{r.gpuMemGb}</TableCell>
-                      <TableCell className={`font-mono text-sm font-medium ${getPerformanceColor(r.gpuUtil, 'gpu')}`}>
-                        {r.gpuUtil}
-                      </TableCell>
-                    </TableRow>
-                    {expandedRow === r.id && (
-                      <TableRow className="bg-muted/30">
-                        <TableCell colSpan={8} className="p-4">
-                          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 text-sm">
-                            <div><span className="text-muted-foreground">Throughput (req/s):</span><br /><span className="font-mono font-medium">{r.throughputRequestsPerSec}</span></div>
-                            <div><span className="text-muted-foreground">Latency Mean:</span><br /><span className="font-mono font-medium">{r.latencyMeanMs} ms</span></div>
-                            <div><span className="text-muted-foreground">Latency P50:</span><br /><span className="font-mono font-medium">{r.latencyP50Ms} ms</span></div>
-                            <div><span className="text-muted-foreground">Latency P90:</span><br /><span className="font-mono font-medium">{r.latencyP90Ms} ms</span></div>
-                            <div><span className="text-muted-foreground">TPOT:</span><br /><span className="font-mono font-medium">{r.tpotMs} ms</span></div>
-                            <div><span className="text-muted-foreground">CPU Util:</span><br /><span className="font-mono font-medium">{r.cpuUtil}%</span></div>
-                            <div><span className="text-muted-foreground">Error Rate:</span><br /><span className={`font-mono font-medium ${getPerformanceColor(r.errorRate, 'error')}`}>{r.errorRate}%</span></div>
-                            <div><span className="text-muted-foreground">Concurrency:</span><br /><span className="font-mono font-medium">{r.concurrency}</span></div>
-                            <div><span className="text-muted-foreground">Total Requests:</span><br /><span className="font-mono font-medium">{r.totalRequests}</span></div>
-                            <div><span className="text-muted-foreground">Created:</span><br /><span className="font-mono font-medium text-xs">{new Date(r.createdAt).toLocaleDateString()}</span></div>
-                          </div>
+      {reportResults.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Search className="w-5 h-5" />
+              Detailed Benchmark Results
+            </CardTitle>
+            <CardDescription>
+              Click any row to expand full details. Sorted by {sortCol.replace(/([A-Z])/g, ' $1').toLowerCase()} ({sortDir === 'desc' ? 'descending' : 'ascending'}).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort('model')}>
+                      <span className="flex items-center gap-1">Model {renderSortIcon('model')}</span>
+                    </TableHead>
+                    <TableHead>Engine</TableHead>
+                    <TableHead>Scenario</TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort('throughputTokensPerSec')}>
+                      <span className="flex items-center gap-1">Throughput (tok/s) {renderSortIcon('throughputTokensPerSec')}</span>
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort('latencyP99Ms')}>
+                      <span className="flex items-center gap-1">Latency P99 (ms) {renderSortIcon('latencyP99Ms')}</span>
+                    </TableHead>
+                    <TableHead>TTFT (ms)</TableHead>
+                    <TableHead>GPU Mem (GB)</TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort('gpuUtil')}>
+                      <span className="flex items-center gap-1">GPU Util (%) {renderSortIcon('gpuUtil')}</span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sorted.map((r) => (
+                    <React.Fragment key={r.id}>
+                      <TableRow
+                        className="cursor-pointer hover:bg-muted/60"
+                        onClick={() => setExpandedRow(expandedRow === r.id ? null : r.id)}
+                      >
+                        <TableCell className="font-medium text-sm">{r.model}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className="text-xs"
+                            style={{ color: r.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR, borderColor: r.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR }}
+                          >
+                            {r.engine === 'vllm' ? 'VLLM' : 'SGLang'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm capitalize">{r.scenario.replace('_', ' ')}</TableCell>
+                        <TableCell className={`font-mono text-sm font-medium ${getPerformanceColor(r.throughputTokensPerSec, 'throughput')}`}>
+                          {r.throughputTokensPerSec.toLocaleString()}
+                        </TableCell>
+                        <TableCell className={`font-mono text-sm font-medium ${getPerformanceColor(r.latencyP99Ms, 'latency')}`}>
+                          {r.latencyP99Ms}
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">{r.ttftMs}</TableCell>
+                        <TableCell className="font-mono text-sm">{r.gpuMemGb}</TableCell>
+                        <TableCell className={`font-mono text-sm font-medium ${getPerformanceColor(r.gpuUtil, 'gpu')}`}>
+                          {r.gpuUtil}
                         </TableCell>
                       </TableRow>
-                    )}
-                  </React.Fragment>
-                ))}
-              </TableBody>
-            </Table>
+                      {expandedRow === r.id && (
+                        <TableRow className="bg-muted/30">
+                          <TableCell colSpan={8} className="p-4">
+                            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 text-sm">
+                              <div><span className="text-muted-foreground">Throughput (req/s):</span><br /><span className="font-mono font-medium">{r.throughputRequestsPerSec}</span></div>
+                              <div><span className="text-muted-foreground">Latency Mean:</span><br /><span className="font-mono font-medium">{r.latencyMeanMs} ms</span></div>
+                              <div><span className="text-muted-foreground">Latency P50:</span><br /><span className="font-mono font-medium">{r.latencyP50Ms} ms</span></div>
+                              <div><span className="text-muted-foreground">Latency P90:</span><br /><span className="font-mono font-medium">{r.latencyP90Ms} ms</span></div>
+                              <div><span className="text-muted-foreground">TPOT:</span><br /><span className="font-mono font-medium">{r.tpotMs} ms</span></div>
+                              <div><span className="text-muted-foreground">CPU Util:</span><br /><span className="font-mono font-medium">{r.cpuUtil}%</span></div>
+                              <div><span className="text-muted-foreground">Error Rate:</span><br /><span className={`font-mono font-medium ${getPerformanceColor(r.errorRate, 'error')}`}>{r.errorRate}%</span></div>
+                              <div><span className="text-muted-foreground">Concurrency:</span><br /><span className="font-mono font-medium">{r.concurrency}</span></div>
+                              <div><span className="text-muted-foreground">Total Requests:</span><br /><span className="font-mono font-medium">{r.totalRequests}</span></div>
+                              <div><span className="text-muted-foreground">Created:</span><br /><span className="font-mono font-medium text-xs">{new Date(r.createdAt).toLocaleDateString()}</span></div>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ─── Benchmark Comparison Sheet ─────────────────────────── */}
+      <Sheet open={compareOpen} onOpenChange={setCompareOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <Scale className="w-5 h-5" />
+              Benchmark Comparison
+            </SheetTitle>
+            <SheetDescription>
+              Select two benchmark results to compare side-by-side
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="px-4 pb-6 space-y-6">
+            {/* ─── Selectors ──────────────────────────────────── */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full" style={{ backgroundColor: selectedA?.engine === 'sglang' ? SGLANG_COLOR : VLLM_COLOR }} />
+                  Result A
+                </label>
+                <Select value={compareA} onValueChange={setCompareA}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select result A..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {reportResults.map((r) => (
+                      <SelectItem key={r.id} value={r.id} disabled={r.id === compareB}>
+                        {getResultLabel(r)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full" style={{ backgroundColor: selectedB?.engine === 'sglang' ? SGLANG_COLOR : VLLM_COLOR }} />
+                  Result B
+                </label>
+                <Select value={compareB} onValueChange={setCompareB}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select result B..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {reportResults.map((r) => (
+                      <SelectItem key={r.id} value={r.id} disabled={r.id === compareA}>
+                        {getResultLabel(r)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* ─── Same Result Warning ────────────────────────── */}
+            {isSameResult && (
+              <Card className="border-amber-200 bg-amber-50">
+                <CardContent className="p-4 flex items-center gap-3">
+                  <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+                  <p className="text-sm text-amber-800">Same result selected for both. Please choose different results to compare.</p>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* ─── Missing Selection ──────────────────────────── */}
+            {!selectedA && !selectedB && !isSameResult && (
+              <Card className="border-dashed">
+                <CardContent className="p-8 text-center">
+                  <Scale className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+                  <p className="text-muted-foreground text-sm">Select two benchmark results above to start comparing.</p>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* ─── Only One Selected ──────────────────────────── */}
+            {((selectedA && !selectedB) || (!selectedA && selectedB)) && !isSameResult && (
+              <Card className="border-dashed">
+                <CardContent className="p-6 text-center">
+                  <Scale className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-muted-foreground text-sm">Select one more result to start the comparison.</p>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* ─── Comparison Results ─────────────────────────── */}
+            {selectedA && selectedB && !isSameResult && (
+              <>
+                {/* ─── Info Cards ────────────────────────────── */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Card className={`border-2 transition-all ${overallScore.aWins > overallScore.bWins ? 'border-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.2)]' : 'border-border'}`}>
+                    <CardContent className="p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: selectedA.engine === 'sglang' ? SGLANG_COLOR : VLLM_COLOR }} />
+                          <span className="font-semibold text-sm">{selectedA.model}</span>
+                        </div>
+                        <Badge variant="outline" className="text-xs" style={{ color: selectedA.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR, borderColor: selectedA.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR }}>
+                          {selectedA.engine === 'vllm' ? 'VLLM' : 'SGLang'}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground capitalize">{selectedA.scenario.replace(/_/g, ' ')} · Concurrency: {selectedA.concurrency}</p>
+                      {overallScore.aWins > overallScore.bWins && (
+                        <Badge className="bg-emerald-100 text-emerald-700 border-0 text-xs">
+                          <Trophy className="w-3 h-3 mr-1" /> Overall Winner
+                        </Badge>
+                      )}
+                    </CardContent>
+                  </Card>
+                  <Card className={`border-2 transition-all ${overallScore.bWins > overallScore.aWins ? 'border-amber-300 shadow-[0_0_8px_rgba(245,158,11,0.2)]' : 'border-border'}`}>
+                    <CardContent className="p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: selectedB.engine === 'sglang' ? SGLANG_COLOR : VLLM_COLOR }} />
+                          <span className="font-semibold text-sm">{selectedB.model}</span>
+                        </div>
+                        <Badge variant="outline" className="text-xs" style={{ color: selectedB.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR, borderColor: selectedB.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR }}>
+                          {selectedB.engine === 'vllm' ? 'VLLM' : 'SGLang'}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground capitalize">{selectedB.scenario.replace(/_/g, ' ')} · Concurrency: {selectedB.concurrency}</p>
+                      {overallScore.bWins > overallScore.aWins && (
+                        <Badge className="bg-amber-100 text-amber-700 border-0 text-xs">
+                          <Trophy className="w-3 h-3 mr-1" /> Overall Winner
+                        </Badge>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* ─── Overall Score ─────────────────────────── */}
+                <Card>
+                  <CardContent className="p-4">
+                    <p className="text-xs font-medium text-muted-foreground mb-3 text-center">Overall Score</p>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right flex-1">
+                        <p className="text-lg font-bold tabular-nums" style={{ color: selectedA.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR }}>
+                          {overallScore.aPct}%
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">{overallScore.aWins}/{overallScore.total} metrics</p>
+                      </div>
+                      <div className="flex-1 h-4 rounded-full bg-muted overflow-hidden flex">
+                        <div
+                          className="h-full transition-all duration-500"
+                          style={{
+                            width: `${overallScore.aPct}%`,
+                            backgroundColor: selectedA.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR,
+                          }}
+                        />
+                        <div
+                          className="h-full transition-all duration-500"
+                          style={{
+                            width: `${overallScore.bPct}%`,
+                            backgroundColor: selectedB.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR,
+                          }}
+                        />
+                      </div>
+                      <div className="text-left flex-1">
+                        <p className="text-lg font-bold tabular-nums" style={{ color: selectedB.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR }}>
+                          {overallScore.bPct}%
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">{overallScore.bWins}/{overallScore.total} metrics</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Separator />
+
+                {/* ─── Throughput Comparison ──────────────────── */}
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4" />
+                    Throughput
+                  </h3>
+                  {compareMetrics.filter((m) => m.label.includes('Throughput')).map((m) => {
+                    const maxVal = Math.max(m.a, m.b, 1)
+                    const aWins = m.higher ? m.a > m.b : m.a < m.b
+                    const bWins = m.higher ? m.b > m.a : m.b < m.a
+                    return (
+                      <Card key={m.label} className={`transition-all ${aWins ? 'ring-1 ring-emerald-200' : bWins ? 'ring-1 ring-amber-200' : ''}`}>
+                        <CardContent className="p-3 space-y-2">
+                          <p className="text-xs font-medium text-muted-foreground">{m.label}</p>
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: selectedA.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR }} />
+                              <div className="flex-1">
+                                <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full transition-all duration-500"
+                                    style={{
+                                      width: `${(m.a / maxVal) * 100}%`,
+                                      backgroundColor: selectedA.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR,
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                              <span className="text-xs font-mono font-medium w-20 text-right tabular-nums">{m.format(m.a)}</span>
+                              {aWins && (
+                                <Badge className="bg-emerald-100 text-emerald-700 border-0 text-[10px] shrink-0">
+                                  <ArrowUp className="w-2.5 h-2.5 mr-0.5" /> Winner
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: selectedB.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR }} />
+                              <div className="flex-1">
+                                <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full transition-all duration-500"
+                                    style={{
+                                      width: `${(m.b / maxVal) * 100}%`,
+                                      backgroundColor: selectedB.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR,
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                              <span className="text-xs font-mono font-medium w-20 text-right tabular-nums">{m.format(m.b)}</span>
+                              {bWins && (
+                                <Badge className="bg-amber-100 text-amber-700 border-0 text-[10px] shrink-0">
+                                  <ArrowUp className="w-2.5 h-2.5 mr-0.5" /> Winner
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
+                </div>
+
+                <Separator />
+
+                {/* ─── Latency Comparison ─────────────────────── */}
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <Clock className="w-4 h-4" />
+                    Latency
+                  </h3>
+                  {compareMetrics.filter((m) => m.label.includes('Latency')).map((m) => {
+                    const maxVal = Math.max(m.a, m.b, 1)
+                    const aWins = m.higher ? m.a > m.b : m.a < m.b
+                    const bWins = m.higher ? m.b > m.a : m.b < m.a
+                    return (
+                      <Card key={m.label} className={`transition-all ${aWins ? 'ring-1 ring-emerald-200' : bWins ? 'ring-1 ring-amber-200' : ''}`}>
+                        <CardContent className="p-3 space-y-2">
+                          <p className="text-xs font-medium text-muted-foreground">{m.label}</p>
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: selectedA.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR }} />
+                              <div className="flex-1">
+                                <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full transition-all duration-500"
+                                    style={{
+                                      width: `${(m.a / maxVal) * 100}%`,
+                                      backgroundColor: selectedA.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR,
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                              <span className="text-xs font-mono font-medium w-20 text-right tabular-nums">{m.format(m.a)}</span>
+                              {aWins && (
+                                <Badge className="bg-emerald-100 text-emerald-700 border-0 text-[10px] shrink-0">
+                                  <ArrowUp className="w-2.5 h-2.5 mr-0.5" /> Winner
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: selectedB.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR }} />
+                              <div className="flex-1">
+                                <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full transition-all duration-500"
+                                    style={{
+                                      width: `${(m.b / maxVal) * 100}%`,
+                                      backgroundColor: selectedB.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR,
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                              <span className="text-xs font-mono font-medium w-20 text-right tabular-nums">{m.format(m.b)}</span>
+                              {bWins && (
+                                <Badge className="bg-amber-100 text-amber-700 border-0 text-[10px] shrink-0">
+                                  <ArrowUp className="w-2.5 h-2.5 mr-0.5" /> Winner
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
+                </div>
+
+                <Separator />
+
+                {/* ─── TTFT & TPOT Comparison ─────────────────── */}
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <Zap className="w-4 h-4" />
+                    TTFT &amp; TPOT
+                  </h3>
+                  {compareMetrics.filter((m) => m.label.includes('TTFT') || m.label.includes('TPOT')).map((m) => {
+                    const maxVal = Math.max(m.a, m.b, 1)
+                    const aWins = m.higher ? m.a > m.b : m.a < m.b
+                    const bWins = m.higher ? m.b > m.a : m.b < m.a
+                    return (
+                      <Card key={m.label} className={`transition-all ${aWins ? 'ring-1 ring-emerald-200' : bWins ? 'ring-1 ring-amber-200' : ''}`}>
+                        <CardContent className="p-3 space-y-2">
+                          <p className="text-xs font-medium text-muted-foreground">{m.label}</p>
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: selectedA.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR }} />
+                              <div className="flex-1">
+                                <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full transition-all duration-500"
+                                    style={{
+                                      width: `${(m.a / maxVal) * 100}%`,
+                                      backgroundColor: selectedA.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR,
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                              <span className="text-xs font-mono font-medium w-20 text-right tabular-nums">{m.format(m.a)}</span>
+                              {aWins && (
+                                <Badge className="bg-emerald-100 text-emerald-700 border-0 text-[10px] shrink-0">
+                                  <ArrowUp className="w-2.5 h-2.5 mr-0.5" /> Winner
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: selectedB.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR }} />
+                              <div className="flex-1">
+                                <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full transition-all duration-500"
+                                    style={{
+                                      width: `${(m.b / maxVal) * 100}%`,
+                                      backgroundColor: selectedB.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR,
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                              <span className="text-xs font-mono font-medium w-20 text-right tabular-nums">{m.format(m.b)}</span>
+                              {bWins && (
+                                <Badge className="bg-amber-100 text-amber-700 border-0 text-[10px] shrink-0">
+                                  <ArrowUp className="w-2.5 h-2.5 mr-0.5" /> Winner
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
+                </div>
+
+                <Separator />
+
+                {/* ─── GPU Resources Comparison ───────────────── */}
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <Cpu className="w-4 h-4" />
+                    GPU Resources
+                  </h3>
+                  {compareMetrics.filter((m) => m.label.includes('GPU') || m.label.includes('CPU')).map((m) => {
+                    const maxVal = Math.max(m.a, m.b, 1)
+                    const aWins = m.higher ? m.a > m.b : m.a < m.b
+                    const bWins = m.higher ? m.b > m.a : m.b < m.a
+                    return (
+                      <Card key={m.label} className={`transition-all ${aWins ? 'ring-1 ring-emerald-200' : bWins ? 'ring-1 ring-amber-200' : ''}`}>
+                        <CardContent className="p-3 space-y-2">
+                          <p className="text-xs font-medium text-muted-foreground">{m.label}</p>
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: selectedA.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR }} />
+                              <div className="flex-1">
+                                <Progress value={(m.a / maxVal) * 100} className="h-2.5 [&>div]:transition-all [&>div]:duration-500" style={{ '--progress-color': selectedA.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR } as React.CSSProperties} />
+                              </div>
+                              <span className="text-xs font-mono font-medium w-20 text-right tabular-nums">{m.format(m.a)}</span>
+                              {aWins && (
+                                <Badge className="bg-emerald-100 text-emerald-700 border-0 text-[10px] shrink-0">
+                                  <ArrowUp className="w-2.5 h-2.5 mr-0.5" /> Winner
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: selectedB.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR }} />
+                              <div className="flex-1">
+                                <Progress value={(m.b / maxVal) * 100} className="h-2.5 [&>div]:transition-all [&>div]:duration-500" style={{ '--progress-color': selectedB.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR } as React.CSSProperties} />
+                              </div>
+                              <span className="text-xs font-mono font-medium w-20 text-right tabular-nums">{m.format(m.b)}</span>
+                              {bWins && (
+                                <Badge className="bg-amber-100 text-amber-700 border-0 text-[10px] shrink-0">
+                                  <ArrowUp className="w-2.5 h-2.5 mr-0.5" /> Winner
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
+                </div>
+
+                <Separator />
+
+                {/* ─── Error Rate Comparison ──────────────────── */}
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4" />
+                    Error Rate
+                  </h3>
+                  {compareMetrics.filter((m) => m.label.includes('Error')).map((m) => {
+                    const maxVal = Math.max(m.a, m.b, 0.1)
+                    const aWins = m.higher ? m.a > m.b : m.a < m.b
+                    const bWins = m.higher ? m.b > m.a : m.b < m.a
+                    return (
+                      <Card key={m.label} className={`transition-all ${aWins ? 'ring-1 ring-emerald-200' : bWins ? 'ring-1 ring-amber-200' : ''}`}>
+                        <CardContent className="p-3 space-y-2">
+                          <p className="text-xs font-medium text-muted-foreground">{m.label}</p>
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: selectedA.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR }} />
+                              <div className="flex-1">
+                                <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full transition-all duration-500"
+                                    style={{
+                                      width: `${Math.min((m.a / maxVal) * 100, 100)}%`,
+                                      backgroundColor: selectedA.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR,
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                              <span className="text-xs font-mono font-medium w-20 text-right tabular-nums">{m.format(m.a)}</span>
+                              {aWins && (
+                                <Badge className="bg-emerald-100 text-emerald-700 border-0 text-[10px] shrink-0">
+                                  <ArrowUp className="w-2.5 h-2.5 mr-0.5" /> Winner
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: selectedB.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR }} />
+                              <div className="flex-1">
+                                <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full transition-all duration-500"
+                                    style={{
+                                      width: `${Math.min((m.b / maxVal) * 100, 100)}%`,
+                                      backgroundColor: selectedB.engine === 'vllm' ? VLLM_COLOR : SGLANG_COLOR,
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                              <span className="text-xs font-mono font-medium w-20 text-right tabular-nums">{m.format(m.b)}</span>
+                              {bWins && (
+                                <Badge className="bg-amber-100 text-amber-700 border-0 text-[10px] shrink-0">
+                                  <ArrowUp className="w-2.5 h-2.5 mr-0.5" /> Winner
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
+                </div>
+              </>
+            )}
           </div>
-        </CardContent>
-      </Card>
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }
