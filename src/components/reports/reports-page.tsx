@@ -4,6 +4,7 @@ import React, { useState, useMemo, useCallback } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   Legend, ScatterChart, Scatter, Cell, ComposedChart,
+  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
 } from 'recharts'
 import {
   Card, CardContent, CardHeader, CardTitle, CardDescription,
@@ -195,6 +196,9 @@ export default function ReportsPage() {
   const [compareOpen, setCompareOpen] = useState(false)
   const [compareA, setCompareA] = useState<string>('')
   const [compareB, setCompareB] = useState<string>('')
+
+  // Radar tab: selected model names for overlay (2-3 models)
+  const [radarSelectedModels, setRadarSelectedModels] = useState<string[]>([])
 
   // Click-to-highlight state for charts
   const throughputHighlight = useChartHighlight()
@@ -432,6 +436,133 @@ export default function ReportsPage() {
     }
     return dist
   }, [filtered, gradeBreakdowns])
+
+  // ─── Radar Chart Data ────────────────────────────────────────────
+  const RADAR_COLORS = [
+    { name: 'VLLM', fill: VLLM_COLOR, stroke: '#059669' },
+    { name: 'SGLang', fill: SGLANG_COLOR, stroke: '#d97706' },
+    { name: 'Sky', fill: '#0ea5e9', stroke: '#0284c7' },
+    ]
+
+  // Get unique model names for the radar selector
+  const radarModelOptions = useMemo(() => {
+    const names = new Set<string>()
+    for (const r of filtered) names.add(r.model)
+    return Array.from(names).sort()
+  }, [filtered])
+
+  // Auto-select first 2 models if none selected
+  const radarEffectiveModels = useMemo(() => {
+    if (radarSelectedModels.length >= 2) return radarSelectedModels.slice(0, 3)
+    if (radarModelOptions.length >= 2) return radarModelOptions.slice(0, 2)
+    return radarModelOptions.slice(0, Math.max(radarModelOptions.length, 0))
+  }, [radarSelectedModels, radarModelOptions])
+
+  const radarData = useMemo(() => {
+    if (radarEffectiveModels.length === 0) return []
+
+    // Compute per-model aggregate metrics
+    const modelMetrics = new Map<string, {
+      bestThroughput: number
+      avgLatency: number
+      avgTtft: number
+      avgGpuUtil: number
+      reliability: number
+      memEfficiency: number
+    }>()
+
+    for (const modelName of radarEffectiveModels) {
+      const modelResults = filtered.filter((r) => r.model === modelName)
+      if (modelResults.length === 0) continue
+
+      const bestThroughput = Math.max(...modelResults.map((r) => r.throughputTokensPerSec))
+      const avgLatency = modelResults.reduce((s, r) => s + r.latencyP99Ms, 0) / modelResults.length
+      const avgTtft = modelResults.reduce((s, r) => s + r.ttftMs, 0) / modelResults.length
+      const avgGpuUtil = modelResults.reduce((s, r) => s + r.gpuUtil, 0) / modelResults.length
+      const avgErrorRate = modelResults.reduce((s, r) => s + r.errorRate, 0) / modelResults.length
+      const avgGpuMem = modelResults.reduce((s, r) => s + r.gpuMemGb, 0) / modelResults.length
+      const memEfficiency = avgGpuMem > 0 ? bestThroughput / avgGpuMem : 0
+      const reliability = Math.max(0, 100 - avgErrorRate * 100)
+
+      modelMetrics.set(modelName, {
+        bestThroughput,
+        avgLatency,
+        avgTtft,
+        avgGpuUtil,
+        reliability,
+        memEfficiency,
+      })
+    }
+
+    if (modelMetrics.size === 0) return []
+
+    // Find maxima for normalization
+    const allMetrics = Array.from(modelMetrics.values())
+    const maxThroughput = Math.max(...allMetrics.map((m) => m.bestThroughput), 1)
+    const maxLatency = Math.max(...allMetrics.map((m) => m.avgLatency), 1)
+    const maxTtft = Math.max(...allMetrics.map((m) => m.avgTtft), 1)
+    const maxMemEff = Math.max(...allMetrics.map((m) => m.memEfficiency), 1)
+
+    const normalize = (value: number, max: number, invert = false) => {
+      const score = max > 0 ? (value / max) * 100 : 0
+      return Math.round(invert ? 100 - score : Math.min(score, 100))
+    }
+
+    const dimensions = [
+      'Throughput',
+      'Latency',
+      'TTFT',
+      'GPU Efficiency',
+      'Reliability',
+      'Memory Eff.',
+    ]
+
+    return dimensions.map((dim) => {
+      const point: Record<string, string | number> = { dimension: dim }
+      radarEffectiveModels.forEach((modelName, idx) => {
+        const m = modelMetrics.get(modelName)
+        if (!m) {
+          point[`model_${idx}`] = 0
+          return
+        }
+        switch (dim) {
+          case 'Throughput':
+            point[`model_${idx}`] = normalize(m.bestThroughput, maxThroughput)
+            break
+          case 'Latency':
+            point[`model_${idx}`] = normalize(m.avgLatency, maxLatency, true)
+            break
+          case 'TTFT':
+            point[`model_${idx}`] = normalize(m.avgTtft, maxTtft, true)
+            break
+          case 'GPU Efficiency':
+            point[`model_${idx}`] = Math.round(m.avgGpuUtil)
+            break
+          case 'Reliability':
+            point[`model_${idx}`] = Math.round(m.reliability)
+            break
+          case 'Memory Eff.':
+            point[`model_${idx}`] = normalize(m.memEfficiency, maxMemEff)
+            break
+        }
+      })
+      return point
+    })
+  }, [radarEffectiveModels, filtered])
+
+  const toggleRadarModel = useCallback((modelName: string) => {
+    setRadarSelectedModels((prev) => {
+      const exists = prev.includes(modelName)
+      if (exists) {
+        return prev.filter((m) => m !== modelName)
+      }
+      if (prev.length >= 3) {
+        toast.warning('Maximum 3 models', { description: 'You can overlay up to 3 models on the radar chart.' })
+        return prev
+      }
+      return [...prev, modelName]
+    })
+  }, [])
 
   // ─── Sort Handler ─────────────────────────────────────────────
   const handleSort = (col: string) => {
@@ -974,7 +1105,111 @@ export default function ReportsPage() {
             <TabsTrigger value="latency">Latency</TabsTrigger>
             <TabsTrigger value="scatter">Throughput vs Latency</TabsTrigger>
             <TabsTrigger value="ttft">TTFT & TPOT</TabsTrigger>
+            <TabsTrigger value="radar">Radar</TabsTrigger>
           </TabsList>
+
+          {/* ─── Radar Comparison ──────────────────────────────── */}
+          <TabsContent value="radar">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Multi-Dimensional Performance Radar</CardTitle>
+                <CardDescription>Compare 2–3 models across 6 key performance dimensions (0–100 scale)</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {/* Model Selector */}
+                <div className="mb-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-sm font-medium">Select Models:</span>
+                    <span className="text-xs text-muted-foreground">({radarEffectiveModels.length} selected)</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {radarModelOptions.map((modelName, idx) => {
+                      const isSelected = radarEffectiveModels.includes(modelName)
+                      const colorIdx = radarEffectiveModels.indexOf(modelName)
+                      const color = colorIdx >= 0 ? RADAR_COLORS[colorIdx % RADAR_COLORS.length] : null
+                      return (
+                        <button
+                          key={modelName}
+                          onClick={() => toggleRadarModel(modelName)}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${isSelected ? 'border-primary shadow-sm' : 'border-muted hover:border-muted-foreground/30 bg-muted/50 hover:bg-muted'} ${color ? 'text-foreground' : 'text-muted-foreground'}`}
+                          style={isSelected && color ? { borderColor: color.fill, backgroundColor: `${color.fill}15` } : undefined}
+                        >
+                          <span
+                            className={`size-2.5 rounded-full ${isSelected ? '' : 'bg-muted-foreground/30'}`}
+                            style={isSelected && color ? { backgroundColor: color.fill } : undefined}
+                          />
+                          {modelName}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {radarData.length > 0 && radarEffectiveModels.length >= 2 ? (
+                  <div className="h-[400px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RadarChart data={radarData} cx="50%" cy="50%" outerRadius="70%">
+                        <PolarGrid stroke="hsl(var(--border))" />
+                        <PolarAngleAxis
+                          dataKey="dimension"
+                          tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                        />
+                        <PolarRadiusAxis
+                          angle={30}
+                          domain={[0, 100]}
+                          tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }}
+                        />
+                        {radarEffectiveModels.map((modelName, idx) => {
+                          const color = RADAR_COLORS[idx % RADAR_COLORS.length]
+                          return (
+                            <Radar
+                              key={`model_${idx}`}
+                              name={modelName}
+                              dataKey={`model_${idx}`}
+                              stroke={color.stroke}
+                              fill={color.fill}
+                              fillOpacity={0.15}
+                              strokeWidth={2}
+                            />
+                          )
+                        })}
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: 'hsl(var(--popover))',
+                            border: '1px solid hsl(var(--border))',
+                            borderRadius: '8px',
+                            fontSize: '12px',
+                          }}
+                          formatter={(value: number, name: string) => {
+                            const modelIdx = parseInt(name.replace('model_', ''), 10)
+                            const modelName = radarEffectiveModels[modelIdx] ?? name
+                            return [`${value}`, modelName]
+                          }}
+                        />
+                        <Legend
+                          wrapperStyle={{ fontSize: 12 }}
+                          formatter={(value: string) => {
+                            const modelIdx = parseInt(value.replace('model_', ''), 10)
+                            return radarEffectiveModels[modelIdx] ?? value
+                          }}
+                        />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="h-[400px] flex flex-col items-center justify-center text-muted-foreground text-sm">
+                    <BarChart3 className="size-10 mb-3 opacity-30" />
+                    {radarModelOptions.length < 2
+                      ? 'Need at least 2 models with benchmark results to show radar comparison.'
+                      : 'Select at least 2 models above to compare.'}
+                  </div>
+                )}
+                <p className="text-[10px] text-muted-foreground mt-2 text-center">
+                  Scores normalized 0–100 · Latency & TTFT inverted (higher = better) · GPU Efficiency & Reliability shown as-is (%)
+                </p>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           {/* ─── Throughput Comparison ──────────────────────────── */}
           <TabsContent value="throughput">

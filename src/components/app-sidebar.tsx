@@ -1,6 +1,7 @@
 'use client'
 
 import { Cpu, LayoutDashboard, Box, SlidersHorizontal, Play, BarChart3, TrendingUp, Settings } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '@/lib/store'
 import type { PageKey } from '@/lib/types'
@@ -69,59 +70,68 @@ export function AppSidebar() {
                 const isActive = activePage === item.key
                 return (
                   <SidebarMenuItem key={item.key}>
-                    <SidebarMenuButton
-                      isActive={isActive}
-                      onClick={() => setActivePage(item.key)}
-                      tooltip={item.label}
-                      className={cn(
-                        'relative h-10 px-3 rounded-lg transition-all duration-300 ease-out',
-                        'hover:scale-[1.02] active:scale-[0.98]',
-                        isActive
-                          ? 'bg-emerald-600/10 text-emerald-700 dark:text-emerald-400 font-semibold shadow-sm'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
-                      )}
-                    >
-                      {/* Animated gradient border on the left side for active item */}
-                      <AnimatePresence mode="wait">
-                        {isActive && (
-                          <motion.div
-                            initial={{ scaleY: 0, opacity: 0 }}
-                            animate={{ scaleY: 1, opacity: 1 }}
-                            exit={{ scaleY: 0, opacity: 0 }}
-                            transition={{ duration: 0.25, ease: 'easeOut' }}
-                            className="absolute left-0 top-1/2 -translate-y-1/2 h-7 w-[4px] rounded-full overflow-hidden shadow-[0_0_8px_rgba(16,185,129,0.5)]"
+                    <TooltipProvider delayDuration={500}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <SidebarMenuButton
+                            isActive={isActive}
+                            onClick={() => setActivePage(item.key)}
+                            tooltip={item.label}
+                            className={cn(
+                              'relative h-10 px-3 rounded-lg transition-all duration-300 ease-out will-change-transform',
+                              'hover:scale-[1.02] active:scale-[0.98]',
+                              isActive
+                                ? 'bg-emerald-600/10 text-emerald-700 dark:text-emerald-400 font-semibold shadow-sm shadow-emerald-500/10 scale-[1.02]'
+                                : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                            )}
                           >
-                            <motion.div
-                              className="h-full w-full bg-gradient-to-b from-emerald-400 via-emerald-600 to-emerald-400"
-                              animate={{
-                                backgroundPosition: ['0% 0%', '0% 100%', '0% 0%'],
-                              }}
-                              transition={{
-                                duration: 2,
-                                repeat: Infinity,
-                                ease: 'linear',
-                              }}
-                              style={{ backgroundSize: '100% 200%' }}
-                            />
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                      <Icon className={cn(
-                        'h-[18px] w-[18px] transition-all duration-300',
-                        isActive ? 'text-emerald-600 dark:text-emerald-400' : ''
-                      )} />
-                      <span className="transition-all duration-300">{item.label}</span>
-                      {item.shortcut && (
-                        <span className="ml-auto text-[10px] text-muted-foreground/50 font-mono group-data-[collapsible=icon]:hidden">
-                          {item.shortcut}
-                        </span>
-                      )}
-                      {item.badge !== undefined && (
-                        <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white group-data-[collapsible=icon]:hidden">
-                          {item.badge}
-                        </span>
-                      )}
-                    </SidebarMenuButton>
+                            {/* Animated gradient border on the left side for active item */}
+                            <AnimatePresence mode="wait">
+                              {isActive && (
+                                <motion.div
+                                  initial={{ scaleY: 0, opacity: 0 }}
+                                  animate={{ scaleY: 1, opacity: 1 }}
+                                  exit={{ scaleY: 0, opacity: 0 }}
+                                  transition={{ duration: 0.25, ease: 'easeOut' }}
+                                  className="absolute left-0 top-1/2 -translate-y-1/2 h-7 w-[4px] rounded-full overflow-hidden shadow-[0_0_12px_rgba(16,185,129,0.6)]"
+                                >
+                                  <motion.div
+                                    className="h-full w-full bg-gradient-to-b from-emerald-400 via-emerald-600 to-emerald-400"
+                                    animate={{
+                                      backgroundPosition: ['0% 0%', '0% 100%', '0% 0%'],
+                                    }}
+                                    transition={{
+                                      duration: 2,
+                                      repeat: Infinity,
+                                      ease: 'linear',
+                                    }}
+                                    style={{ backgroundSize: '100% 200%' }}
+                                  />
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                            <Icon className={cn(
+                              'h-[18px] w-[18px] transition-all duration-300',
+                              isActive ? 'text-emerald-600 dark:text-emerald-400' : ''
+                            )} />
+                            <span className="transition-all duration-300">{item.label}</span>
+                            {item.shortcut && (
+                              <span className="ml-auto text-[10px] text-muted-foreground/50 font-mono group-data-[collapsible=icon]:hidden">
+                                {item.shortcut}
+                              </span>
+                            )}
+                            {item.badge !== undefined && (
+                              <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white group-data-[collapsible=icon]:hidden">
+                                {item.badge}
+                              </span>
+                            )}
+                          </SidebarMenuButton>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="text-xs">
+                          {item.label} <span className="text-muted-foreground ml-1 font-mono">({item.shortcut})</span>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </SidebarMenuItem>
                 )
               })}
@@ -130,7 +140,9 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="px-4 pb-4 border-t border-border/40 pt-3">
+      <SidebarFooter className="px-4 pb-4 border-t border-border/40 pt-3 relative">
+        {/* Animated gradient line at the bottom */}
+        <div className="absolute bottom-0 left-0 right-0 h-[2px] animate-gradient-line" />
         <div className="flex items-center gap-2 px-2 group-data-[collapsible=icon]:justify-center">
           <span className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />

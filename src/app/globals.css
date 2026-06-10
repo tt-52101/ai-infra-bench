@@ -171,3 +171,188 @@
 .stagger-4 { animation-delay: 0.20s; }
 .stagger-5 { animation-delay: 0.25s; }
 .stagger-6 { animation-delay: 0.30s; }
+
+/* ─── Shimmer glow animation (for premium card highlights) ─── */
+@keyframes shimmer-glow {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.15), 0 0 20px rgba(16, 185, 129, 0.05);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(16, 185, 129, 0.3), 0 0 40px rgba(16, 185, 129, 0.1);
+  }
+}
+
+.animate-shimmer-glow {
+  animation: shimmer-glow 2.5s ease-in-out infinite;
+}
+
+/* ─── Prominent pulse (for status indicators) ────────────── */
+@keyframes pulse-prominent {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.4);
+  }
+}
+
+.animate-pulse-prominent {
+  animation: pulse-prominent 1.5s ease-in-out infinite;
+}
+
+/* ─── Success flash (brief glow on benchmark completion) ── */
+@keyframes success-flash {
+  0% {
+    background-color: transparent;
+  }
+  15% {
+    background-color: rgba(16, 185, 129, 0.15);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.animate-success-flash {
+  animation: success-flash 1.2s ease-out;
+}
+
+/* ─── Running badge pulse ────────────────────────────────── */
+@keyframes running-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0);
+  }
+}
+
+.animate-running-pulse {
+  animation: running-pulse 1.5s ease-in-out infinite;
+}
+
+/* ─── Gradient border animation (for buttons) ───────────── */
+@keyframes gradient-border-rotate {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* ─── Sidebar bottom gradient line ──────────────────────── */
+@keyframes gradient-slide {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 200% 0%; }
+}
+
+.animate-gradient-line {
+  background: linear-gradient(90deg, #10b981, #059669, #f59e0b, #10b981);
+  background-size: 200% 100%;
+  animation: gradient-slide 3s linear infinite;
+}
+
+/* ─── Global Card hover enhancement ─────────────────────── */
+@layer base {
+  .card-hover-enhanced {
+    transition: box-shadow 300ms ease, border-color 300ms ease;
+  }
+  .card-hover-enhanced:hover {
+    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.05);
+  }
+  .dark .card-hover-enhanced:hover {
+    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.25), 0 4px 6px -4px rgb(0 0 0 / 0.15);
+  }
+}
+
+/* ─── Focus-visible ring enhancement ────────────────────── */
+@layer base {
+  button:focus-visible,
+  [role="button"]:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible {
+    outline: 2px solid oklch(0.646 0.222 41.116);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+}
+
+/* ─── Will-change for animated elements ─────────────────── */
+.will-change-transform {
+  will-change: transform;
+}
+
+/* ─── Stat card hover gradient overlay ──────────────────── */
+.stat-card-hover {
+  position: relative;
+  overflow: hidden;
+  transition: all 300ms ease;
+}
+.stat-card-hover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 300ms ease;
+  pointer-events: none;
+}
+.stat-card-hover:hover::after {
+  opacity: 1;
+}
+.stat-card-hover.border-l-emerald-500::after {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, transparent 60%);
+}
+.stat-card-hover.border-l-amber-500::after {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, transparent 60%);
+}
+.stat-card-hover.border-l-sky-500::after {
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.08) 0%, transparent 60%);
+}
+.stat-card-hover.border-l-rose-500::after {
+  background: linear-gradient(135deg, rgba(244, 63, 94, 0.08) 0%, transparent 60%);
+}
+
+.dark .stat-card-hover.border-l-emerald-500::after {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, transparent 60%);
+}
+.dark .stat-card-hover.border-l-amber-500::after {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, transparent 60%);
+}
+.dark .stat-card-hover.border-l-sky-500::after {
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.12) 0%, transparent 60%);
+}
+.dark .stat-card-hover.border-l-rose-500::after {
+  background: linear-gradient(135deg, rgba(244, 63, 94, 0.12) 0%, transparent 60%);
+}
+
+.stat-card-hover:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+.dark .stat-card-hover:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* ─── Quick action card border glow on hover ────────────── */
+.quick-action-glow {
+  transition: box-shadow 300ms ease, border-color 300ms ease;
+}
+.quick-action-glow-emerald:hover {
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.2), 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+.quick-action-glow-amber:hover {
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.2), 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+.quick-action-glow-sky:hover {
+  box-shadow: 0 0 12px rgba(14, 165, 233, 0.2), 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.dark .quick-action-glow-emerald:hover {
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.25), 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.dark .quick-action-glow-amber:hover {
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.25), 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.dark .quick-action-glow-sky:hover {
+  box-shadow: 0 0 12px rgba(14, 165, 233, 0.25), 0 4px 12px rgba(0, 0, 0, 0.3);
+}

@@ -116,7 +116,7 @@ function SkeletonCard() {
 
 function SkeletonChart({ height = 'h-[260px]' }: { height?: string }) {
   return (
-    <Card className="h-full">
+    <Card className="h-full card-hover-enhanced">
       <CardHeader className="pb-2">
         <div className="h-5 w-40 animate-shimmer rounded" />
         <div className="h-4 w-56 animate-shimmer rounded mt-1" />
@@ -943,7 +943,7 @@ export function DashboardPage() {
           </div>
           <Button
             onClick={() => setActivePage('benchmark')}
-            className="gap-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white shadow-sm hover:shadow-emerald-500/25 hover:shadow-md transition-all duration-300"
+            className="gap-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white shadow-sm hover:shadow-emerald-500/25 hover:shadow-md transition-all duration-300 cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
           >
             <Play className="h-4 w-4" />
             New Benchmark
@@ -965,7 +965,7 @@ export function DashboardPage() {
             const gradientBg = statCardGradients[stat.borderColor] ?? ''
             return (
               <motion.div key={stat.title} variants={item}>
-                <Card className={cn('border-l-4', stat.borderColor, 'py-0 gap-0 overflow-hidden', gradientBg)}>
+                <Card className={cn('border-l-4', stat.borderColor, 'py-0 gap-0 overflow-hidden stat-card-hover', gradientBg)}>
                   <CardContent className="p-5">
                     <div className="flex items-start justify-between">
                       <div className="space-y-2">
@@ -1032,7 +1032,7 @@ export function DashboardPage() {
 
       {/* ── Platform Performance Grade ─────────────────────────────── */}
       <motion.div variants={item}>
-        <Card className="border-l-4 border-l-emerald-500 py-0 gap-0 overflow-hidden bg-gradient-to-br from-emerald-50/80 to-transparent dark:from-emerald-950/30 dark:to-transparent">
+        <Card className="border-l-4 border-l-emerald-500 py-0 gap-0 overflow-hidden card-hover-enhanced bg-gradient-to-br from-emerald-50/80 to-transparent dark:from-emerald-950/30 dark:to-transparent">
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
@@ -1147,7 +1147,7 @@ export function DashboardPage() {
           {isLoading ? (
             <SkeletonChart height="h-[280px]" />
           ) : (
-            <Card className="h-full">
+            <Card className="h-full card-hover-enhanced">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base font-semibold">Performance Overview</CardTitle>
                 <CardDescription>Throughput (tokens/s) over recent benchmarks</CardDescription>
@@ -1228,7 +1228,7 @@ export function DashboardPage() {
           {isLoading ? (
             <SkeletonChart height="h-[200px]" />
           ) : (
-            <Card className="h-full">
+            <Card className="h-full card-hover-enhanced">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base font-semibold">Engine Distribution</CardTitle>
                 <CardDescription>Models by inference engine</CardDescription>
@@ -1286,7 +1286,7 @@ export function DashboardPage() {
           {isLoading ? (
             <SkeletonChart height="h-[240px]" />
           ) : (
-            <Card className="h-full">
+            <Card className="h-full card-hover-enhanced">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base font-semibold">Latency Distribution</CardTitle>
                 <CardDescription>By percentile (ms)</CardDescription>
@@ -1337,7 +1337,7 @@ export function DashboardPage() {
 
         {/* Recent Benchmark Results Table */}
         <motion.div variants={item} className="lg:col-span-2">
-          <Card className="h-full">
+          <Card className="h-full card-hover-enhanced">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <div>
@@ -1347,7 +1347,7 @@ export function DashboardPage() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="text-xs gap-1 text-muted-foreground hover:text-foreground"
+                  className="text-xs gap-1 text-muted-foreground hover:text-foreground cursor-pointer"
                   onClick={() => setActivePage('reports')}
                 >
                   View All
@@ -1419,12 +1419,12 @@ export function DashboardPage() {
       <motion.div variants={item}>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Card
-            className="cursor-pointer group hover:shadow-md hover:border-emerald-200 dark:hover:border-emerald-800 transition-all duration-200 py-0"
+            className="cursor-pointer group hover:border-emerald-200 dark:hover:border-emerald-800 transition-all duration-300 py-0 animate-shimmer-glow quick-action-glow quick-action-glow-emerald"
             onClick={() => setActivePage('benchmark')}
           >
-            <CardContent className="p-5">
+            <CardContent className="p-5 relative z-10">
               <div className="flex items-center gap-4">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400 group-hover:bg-emerald-100 dark:group-hover:bg-emerald-900 transition-colors">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400 group-hover:bg-emerald-100 dark:group-hover:bg-emerald-900 transition-colors will-change-transform">
                   <Play className="h-5 w-5" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -1437,12 +1437,12 @@ export function DashboardPage() {
           </Card>
 
           <Card
-            className="cursor-pointer group hover:shadow-md hover:border-amber-200 dark:hover:border-amber-800 transition-all duration-200 py-0"
+            className="cursor-pointer group hover:border-amber-200 dark:hover:border-amber-800 transition-all duration-300 py-0 quick-action-glow quick-action-glow-amber"
             onClick={() => setActivePage('models')}
           >
             <CardContent className="p-5">
               <div className="flex items-center gap-4">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-400 group-hover:bg-amber-100 dark:group-hover:bg-amber-900 transition-colors">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-400 group-hover:bg-amber-100 dark:group-hover:bg-amber-900 transition-colors will-change-transform">
                   <Plus className="h-5 w-5" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -1455,12 +1455,12 @@ export function DashboardPage() {
           </Card>
 
           <Card
-            className="cursor-pointer group hover:shadow-md hover:border-sky-200 dark:hover:border-sky-800 transition-all duration-200 py-0"
+            className="cursor-pointer group hover:border-sky-200 dark:hover:border-sky-800 transition-all duration-300 py-0 quick-action-glow quick-action-glow-sky"
             onClick={() => setActivePage('parameters')}
           >
             <CardContent className="p-5">
               <div className="flex items-center gap-4">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-sky-950 dark:text-sky-400 group-hover:bg-sky-100 dark:group-hover:bg-sky-900 transition-colors">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-sky-950 dark:text-sky-400 group-hover:bg-sky-100 dark:group-hover:bg-sky-900 transition-colors will-change-transform">
                   <SlidersHorizontal className="h-5 w-5" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -1521,7 +1521,7 @@ export function DashboardPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.1, duration: 0.4, ease: 'easeOut' }}
               >
-                <Card className="overflow-hidden py-0 gap-0">
+                <Card className="overflow-hidden py-0 gap-0 card-hover-enhanced">
                   {/* Dark gradient header */}
                   <div className="bg-gradient-to-r from-slate-800 to-slate-700 dark:from-slate-900 dark:to-slate-800 px-4 py-3 flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -1595,7 +1595,7 @@ export function DashboardPage() {
         {/* Cluster Summary Row */}
         <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Total GPU Memory */}
-          <Card className="py-0 gap-0">
+          <Card className="py-0 gap-0 card-hover-enhanced">
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-muted-foreground font-medium">Total GPU Memory</span>
@@ -1611,7 +1611,7 @@ export function DashboardPage() {
           </Card>
 
           {/* Average Utilization */}
-          <Card className="py-0 gap-0">
+          <Card className="py-0 gap-0 card-hover-enhanced">
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-muted-foreground font-medium">Avg Utilization</span>
@@ -1634,7 +1634,7 @@ export function DashboardPage() {
           </Card>
 
           {/* Total Power */}
-          <Card className="py-0 gap-0">
+          <Card className="py-0 gap-0 card-hover-enhanced">
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-muted-foreground font-medium">Total Power</span>
@@ -1650,7 +1650,7 @@ export function DashboardPage() {
           </Card>
 
           {/* Active Processes */}
-          <Card className="py-0 gap-0">
+          <Card className="py-0 gap-0 card-hover-enhanced">
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-muted-foreground font-medium">Active Processes</span>
@@ -1675,7 +1675,7 @@ export function DashboardPage() {
         <h2 className="text-lg font-semibold tracking-tight mb-3">System Health</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {/* GPU Cluster */}
-          <Card className="py-0 gap-0">
+          <Card className="py-0 gap-0 card-hover-enhanced">
             <CardContent className="p-5">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
@@ -1687,7 +1687,7 @@ export function DashboardPage() {
                     <p className="text-xs text-muted-foreground">8/8 GPUs Active</p>
                   </div>
                 </div>
-                <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 text-[11px] font-semibold border-0">
+                <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 text-[11px] font-semibold border-0 animate-pulse-prominent">
                   Online
                 </Badge>
               </div>
@@ -1702,7 +1702,7 @@ export function DashboardPage() {
           </Card>
 
           {/* Memory Pool */}
-          <Card className="py-0 gap-0">
+          <Card className="py-0 gap-0 card-hover-enhanced">
             <CardContent className="p-5">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
@@ -1714,7 +1714,7 @@ export function DashboardPage() {
                     <p className="text-xs text-muted-foreground">58.4 / 80 GB Used</p>
                   </div>
                 </div>
-                <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 text-[11px] font-semibold border-0">
+                <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 text-[11px] font-semibold border-0 animate-pulse-prominent">
                   Warning
                 </Badge>
               </div>
@@ -1729,7 +1729,7 @@ export function DashboardPage() {
           </Card>
 
           {/* API Endpoint */}
-          <Card className="py-0 gap-0">
+          <Card className="py-0 gap-0 card-hover-enhanced">
             <CardContent className="p-5">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
@@ -1742,8 +1742,8 @@ export function DashboardPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 text-[11px] font-semibold border-0">
+                  <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse-prominent" />
+                  <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 text-[11px] font-semibold border-0 animate-pulse-prominent">
                     Healthy
                   </Badge>
                 </div>
@@ -1762,7 +1762,7 @@ export function DashboardPage() {
 
       {/* ── Activity Timeline ─────────────────────────────────────── */}
       <motion.div variants={item}>
-        <Card className="py-0 gap-0 overflow-hidden">
+        <Card className="py-0 gap-0 overflow-hidden card-hover-enhanced">
           <CardHeader className="pb-3 pt-5 px-5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">

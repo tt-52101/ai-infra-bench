@@ -206,7 +206,7 @@ function StatusBadge({ status }: { status: TaskStatus }) {
     },
     running: {
       label: 'Running',
-      className: 'bg-blue-100 text-blue-700 border-blue-200',
+      className: 'bg-blue-100 text-blue-700 border-blue-200 animate-running-pulse',
       icon: <Loader2 className="size-3 animate-spin" />
     },
     completed: {
@@ -233,9 +233,9 @@ function StatsCard({ title, value, icon, color }: {
   title: string; value: number; icon: React.ReactNode; color: string
 }) {
   return (
-    <Card className="py-4">
+    <Card className="py-4 card-hover-enhanced">
       <CardContent className="flex items-center gap-3 px-4">
-        <div className={`flex size-10 shrink-0 items-center justify-center rounded-lg ${color}`}>
+        <div className={`flex size-10 shrink-0 items-center justify-center rounded-lg ${color} will-change-transform`}>
           {icon}
         </div>
         <div>
@@ -903,7 +903,7 @@ export default function BenchmarkPage() {
                 </TooltipContent>
               </Tooltip>
             </div>
-            <Button onClick={() => setConfigOpen(true)} size="lg" className="shrink-0">
+            <Button onClick={() => setConfigOpen(true)} size="lg" className="shrink-0 cursor-pointer bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white shadow-sm hover:shadow-emerald-500/25 hover:shadow-md transition-all duration-300 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2">
               <Plus className="size-4" /> New Benchmark
             </Button>
           </div>
@@ -1031,7 +1031,7 @@ export default function BenchmarkPage() {
           transition={{ duration: 0.3, delay: 0.1 }}
           className="mt-6"
         >
-          <Card className="py-4">
+          <Card className="py-4 card-hover-enhanced">
             <CardHeader className="pb-2">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle className="text-lg">Benchmark History</CardTitle>
@@ -1113,7 +1113,7 @@ export default function BenchmarkPage() {
                           return (
                             <TableRow
                               key={task.id}
-                              className={`group ${isCompared ? 'border-l-2 border-l-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20' : ''}`}
+                              className={`group transition-all duration-300 ${isCompared ? 'border-l-2 border-l-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20' : ''} ${task.status === 'completed' ? 'animate-success-flash' : ''}`}
                             >
                               <TableCell className="text-center">
                                 <Checkbox
@@ -1338,14 +1338,14 @@ export default function BenchmarkPage() {
                 {SCENARIOS.map(scenario => (
                   <motion.button
                     key={scenario.id}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
                     onClick={() => handleScenarioChange(scenario.id)}
                     data-state={selectedScenario === scenario.id ? 'selected' : 'unselected'}
-                    className={`flex flex-col items-center gap-1.5 rounded-lg border-2 p-3 transition-all ${scenario.bgColor} ${scenario.borderColor} ${
+                    className={`flex flex-col items-center gap-1.5 rounded-lg border-2 p-3 transition-all will-change-transform ${scenario.bgColor} ${scenario.borderColor} ${
                       selectedScenario === scenario.id
                         ? 'ring-2 ring-offset-1 shadow-sm'
-                        : ''
+                        : 'hover:shadow-md'
                     }`}
                     style={selectedScenario === scenario.id ? {
                       borderColor: scenario.color.includes('emerald') ? '#059669' :
@@ -1448,7 +1448,7 @@ export default function BenchmarkPage() {
 
           <SheetFooter className="mt-6">
             <Button
-              className="w-full"
+              className="w-full cursor-pointer"
               size="lg"
               onClick={handleStartBenchmark}
               disabled={!taskName || !selectedModelId || !selectedProfileId}

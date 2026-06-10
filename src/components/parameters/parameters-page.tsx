@@ -21,7 +21,18 @@ import {
   Edit3,
   Loader2,
   AlertCircle,
+  TrendingUp,
+  Activity,
 } from 'lucide-react'
+import { motion } from 'framer-motion'
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  ReferenceLine,
+} from 'recharts'
 import type { EngineType, ParameterProfileInfo } from '@/lib/types'
 import { useProfiles, useModels } from '@/hooks/use-api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -42,6 +53,7 @@ import { Separator } from '@/components/ui/separator'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 
 // ─── Parameter Tooltips ────────────────────────────────────────────────────
 const PARAM_TOOLTIPS: Record<string, string> = {
@@ -281,6 +293,114 @@ function ParamSwitchRow({
   )
 }
 
+// ─── Sensitivity Parameter Configuration ────────────────────────────────────
+const SENSITIVITY_PARAM_CONFIG: Record<string, {
+  label: string
+  key: keyof ParameterValues
+  min: number
+  max: number
+  step: number
+  unit?: string
+}> = {
+  maxNumSeqs: { label: 'Max Num Sequences', key: 'maxNumSeqs', min: 1, max: 1024, step: 1 },
+  gpuMemoryUtil: { label: 'GPU Memory Utilization', key: 'gpuMemoryUtil', min: 0.5, max: 0.99, step: 0.01 },
+  maxNumBatchedTokens: { label: 'Max Batched Tokens', key: 'maxNumBatchedTokens', min: 256, max: 65536, step: 256, unit: 'tokens' },
+  maxModelLen: { label: 'Max Model Length', key: 'maxModelLen', min: 512, max: 32768, step: 512, unit: 'tokens' },
+  swapSpace: { label: 'Swap Space', key: 'swapSpace', min: 0, max: 16, step: 1, unit: 'GB' },
+}
+
+// ─── Helper: Generate Sensitivity Data ───────────────────────────────────────
+interface SensitivityDataPoint {
+  paramValue: number
+  paramLabel: string
+  throughput: number
+  latency: number
+}
+
+function generateSensitivityData(
+  currentParams: ParameterValues,
+  engine: EngineType,
+  paramKey: keyof ParameterValues,
+  numPoints: number = 40,
+): SensitivityDataPoint[] {
+  const config = SENSITIVITY_PARAM_CONFIG[paramKey]
+  if (!config) return []
+
+  const { min, max, step } = config
+  const data: SensitivityDataPoint[] = []
+
+  for (let i = 0; i < numPoints; i++) {
+    const t = i / (numPoints - 1)
+    const rawValue = min + t * (max - min)
+    // Snap to step
+    const snappedValue = Math.round(rawValue / step) * step
+    // Clamp
+    const paramValue = Math.max(min, Math.min(max, snappedValue))
+
+    // Create modified params with this param value
+    const modifiedParams = { ...currentParams, [paramKey]: paramValue }
+
+    // Compute impact for these modified params
+    const impact = computeImpact(modifiedParams, engine)
+
+    // Add realistic curve shaping based on parameter type
+    // For concurrency-like params (maxNumSeqs, maxNumBatchedTokens), add diminishing returns effect
+    let throughput = impact.throughput
+    let latency = impact.latency
+
+    if (paramKey === 'maxNumSeqs' || paramKey === 'maxNumBatchedTokens') {
+      // Throughput: logistic-like growth with saturation
+      // Scale the throughput to show clear plateau effect
+      const normalizedT = (paramValue - min) / (max - min)
+      const saturationPoint = 0.5 + (currentParams.gpuMemoryUtil - 0.5) * 0.3
+      const logisticFactor = 1 / (1 + Math.exp(-8 * (normalizedT - saturationPoint)))
+      const baseThroughput = 15 + 55 * logisticFactor
+      const dimReturns = -15 * Math.max(0, normalizedT - 0.7) * Math.max(0, normalizedT - 0.7) * 10
+      throughput = Math.round(Math.min(100, Math.max(5, baseThroughput + dimReturns + (modifiedParams.enableChunkedPrefill ? 8 : 0) + (modifiedParams.enablePrefixCaching ? 5 : 0) + (modifiedParams.quantization !== 'none' ? 5 : 0))))
+
+      // Latency: linear + exponential after saturation
+      const linearComponent = 20 + 40 * normalizedT
+      const expComponent = 30 * Math.pow(Math.max(0, normalizedT - 0.6), 2) / 0.16
+      latency = Math.round(Math.min(100, Math.max(5, linearComponent + expComponent + (modifiedParams.enforceEager ? -10 : 0) + (modifiedParams.enableChunkedPrefill ? -5 : 0))))
+    } else if (paramKey === 'gpuMemoryUtil') {
+      // Throughput increases with GPU mem util, but plateaus near max
+      const normalizedT = (paramValue - min) / (max - min)
+      throughput = Math.round(Math.min(100, Math.max(5, 20 + 60 * Math.pow(normalizedT, 0.6) + (modifiedParams.enableChunkedPrefill ? 8 : 0) + (modifiedParams.maxNumSeqs / 1024) * 15)))
+
+      // Latency slightly decreases with more GPU memory (less swapping), then stabilizes
+      latency = Math.round(Math.min(100, Math.max(5, 70 - 30 * Math.pow(normalizedT, 0.5) + (modifiedParams.maxNumSeqs / 1024) * 15 - (modifiedParams.enforceEager ? 10 : 0))))
+    } else if (paramKey === 'maxModelLen') {
+      // Throughput decreases with larger model length (more memory per sequence)
+      const normalizedT = (paramValue - min) / (max - min)
+      throughput = Math.round(Math.min(100, Math.max(5, 75 - 40 * normalizedT + (modifiedParams.enableChunkedPrefill ? 8 : 0) + (modifiedParams.maxNumSeqs / 1024) * 15)))
+
+      // Latency increases with model length
+      latency = Math.round(Math.min(100, Math.max(5, 25 + 35 * normalizedT + (modifiedParams.maxNumSeqs / 1024) * 20 - (modifiedParams.enforceEager ? 10 : 0))))
+    } else if (paramKey === 'swapSpace') {
+      // Throughput: swap helps up to a point, then hurts
+      const normalizedT = (paramValue - min) / (max - min)
+      const swapBenefit = 10 * Math.min(1, normalizedT * 3)
+      const swapCost = -8 * Math.max(0, normalizedT - 0.4) * 2
+      throughput = Math.round(Math.min(100, Math.max(5, 40 + swapBenefit + swapCost + (modifiedParams.enableChunkedPrefill ? 8 : 0) + (modifiedParams.maxNumSeqs / 1024) * 15)))
+
+      // Latency: increases when swapping is used heavily
+      latency = Math.round(Math.min(100, Math.max(5, 40 + 20 * Math.max(0, normalizedT - 0.3) / 0.7 + (modifiedParams.maxNumSeqs / 1024) * 20 - (modifiedParams.enforceEager ? 10 : 0))))
+    }
+
+    // Format label
+    const paramLabel = step < 1 ? paramValue.toFixed(2) : paramValue.toString()
+
+    data.push({
+      paramValue,
+      paramLabel,
+      throughput,
+      latency,
+    })
+  }
+
+  return data
+}
+
 // ─── Helper: Estimate Impact ────────────────────────────────────────────────
 function computeImpact(params: ParameterValues, engine: EngineType) {
   // Memory estimation: base + gpuMemoryUtil factor + modelLen factor + sequences factor
@@ -369,6 +489,7 @@ export default function ParametersPage() {
   const [presetsImported, setPresetsImported] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [sensitivityParam, setSensitivityParam] = useState<keyof typeof SENSITIVITY_PARAM_CONFIG>('maxNumSeqs')
 
   // Null-safe lists from API data
   const savedProfiles = profiles ?? []
@@ -587,6 +708,24 @@ export default function ParametersPage() {
 
   // ── Impact calculations ──
   const impact = useMemo(() => computeImpact(params, engine), [params, engine])
+
+  // ── Sensitivity chart data ──
+  const sensitivityData = useMemo(
+    () => generateSensitivityData(params, engine, sensitivityParam),
+    [params, engine, sensitivityParam],
+  )
+
+  const currentSensitivityValue = params[sensitivityParam] as number
+  const sensitivityConfig = SENSITIVITY_PARAM_CONFIG[sensitivityParam]
+
+  // Find the closest data point label to the current parameter value for the ReferenceLine
+  const currentSensitivityLabel = useMemo(() => {
+    if (!sensitivityConfig || !sensitivityData.length) return undefined
+    const closest = sensitivityData.reduce((prev, curr) =>
+      Math.abs(curr.paramValue - currentSensitivityValue) < Math.abs(prev.paramValue - currentSensitivityValue) ? curr : prev,
+    )
+    return closest.paramLabel
+  }, [sensitivityData, currentSensitivityValue, sensitivityConfig])
 
   const isLoading = profilesLoading || modelsLoading
 
@@ -1038,6 +1177,215 @@ export default function ParametersPage() {
                 </Card>
               </div>
             </div>
+
+            <Separator />
+
+            {/* ── Parameter Sensitivity Preview ── */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: 'easeOut' }}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-semibold">Parameter Sensitivity Preview</h2>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button type="button" className="inline-flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors" onClick={(e) => e.preventDefault()}>
+                        <Info className="size-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="max-w-sm">
+                      <p className="text-xs">
+                        This prediction model uses approximate heuristics to estimate how throughput and latency
+                        change as a single parameter varies. Throughput typically follows a logistic curve
+                        (diminishing returns after saturation), while latency increases linearly with
+                        acceleration after the saturation point. These are predictions — run actual
+                        benchmarks for precise measurements.
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm text-muted-foreground whitespace-nowrap">X-Axis Parameter:</Label>
+                  <Select
+                    value={sensitivityParam}
+                    onValueChange={(v) => setSensitivityParam(v as keyof typeof SENSITIVITY_PARAM_CONFIG)}
+                  >
+                    <SelectTrigger className="w-[200px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(SENSITIVITY_PARAM_CONFIG).map(([key, cfg]) => (
+                        <SelectItem key={key} value={key}>
+                          {cfg.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Throughput Prediction Chart */}
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <TrendingUp className="size-4 text-emerald-500" />
+                      Throughput Prediction
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      Estimated throughput as {sensitivityConfig?.label ?? 'parameter'} varies
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="w-full h-[220px]">
+                      <ChartContainer
+                        config={{
+                          throughput: { label: 'Throughput', color: '#10b981' },
+                        }}
+                        className="w-full h-full"
+                      >
+                        <AreaChart
+                          data={sensitivityData}
+                          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                        >
+                          <defs>
+                            <linearGradient id="throughputSensitivityGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                              <stop offset="95%" stopColor="#10b981" stopOpacity={0.02} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                          <XAxis
+                            dataKey="paramLabel"
+                            tick={{ fontSize: 10 }}
+                            axisLine={false}
+                            tickLine={false}
+                            interval="preserveStartEnd"
+                          />
+                          <YAxis
+                            tick={{ fontSize: 10 }}
+                            axisLine={false}
+                            tickLine={false}
+                            width={35}
+                            domain={[0, 100]}
+                          />
+                          <ChartTooltip
+                            content={(
+                              <ChartTooltipContent
+                                formatter={(value: number) => [`${value}%`, 'Throughput']}
+                                labelFormatter={(label: string) => `${sensitivityConfig?.label ?? 'Param'}: ${label}`}
+                              />
+                            )}
+                          />
+                          <ReferenceLine
+                            x={currentSensitivityLabel}
+                            stroke="#10b981"
+                            strokeWidth={2}
+                            strokeDasharray="4 4"
+                            label={{
+                              value: 'Current',
+                              position: 'top',
+                              fill: '#10b981',
+                              fontSize: 10,
+                            }}
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="throughput"
+                            stroke="#10b981"
+                            fill="url(#throughputSensitivityGrad)"
+                            strokeWidth={2}
+                            animationDuration={400}
+                            animationEasing="ease-out"
+                          />
+                        </AreaChart>
+                      </ChartContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Latency Prediction Chart */}
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <Activity className="size-4 text-amber-500" />
+                      Latency Prediction
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      Estimated latency as {sensitivityConfig?.label ?? 'parameter'} varies
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="w-full h-[220px]">
+                      <ChartContainer
+                        config={{
+                          latency: { label: 'Latency', color: '#f59e0b' },
+                        }}
+                        className="w-full h-full"
+                      >
+                        <AreaChart
+                          data={sensitivityData}
+                          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                        >
+                          <defs>
+                            <linearGradient id="latencySensitivityGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3} />
+                              <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.02} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                          <XAxis
+                            dataKey="paramLabel"
+                            tick={{ fontSize: 10 }}
+                            axisLine={false}
+                            tickLine={false}
+                            interval="preserveStartEnd"
+                          />
+                          <YAxis
+                            tick={{ fontSize: 10 }}
+                            axisLine={false}
+                            tickLine={false}
+                            width={35}
+                            domain={[0, 100]}
+                          />
+                          <ChartTooltip
+                            content={(
+                              <ChartTooltipContent
+                                formatter={(value: number) => [`${value}%`, 'Latency']}
+                                labelFormatter={(label: string) => `${sensitivityConfig?.label ?? 'Param'}: ${label}`}
+                              />
+                            )}
+                          />
+                          <ReferenceLine
+                            x={currentSensitivityLabel}
+                            stroke="#f59e0b"
+                            strokeWidth={2}
+                            strokeDasharray="4 4"
+                            label={{
+                              value: 'Current',
+                              position: 'top',
+                              fill: '#f59e0b',
+                              fontSize: 10,
+                            }}
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="latency"
+                            stroke="#f59e0b"
+                            fill="url(#latencySensitivityGrad)"
+                            strokeWidth={2}
+                            animationDuration={400}
+                            animationEasing="ease-out"
+                          />
+                        </AreaChart>
+                      </ChartContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </motion.div>
 
             <Separator />
 

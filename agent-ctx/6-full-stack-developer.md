@@ -1,20 +1,49 @@
-# Task 6: Update Reports page to use real API data
+# Task ID: 6
+# Agent: full-stack-developer
+# Task: Add Performance History Trend section to Model Detail Sheet
 
-## Task Summary
-Updated the Reports page (`src/components/reports/reports-page.tsx`) to use real API data instead of mock data.
+## Work Log
 
-## Key Changes
-1. **Removed mock data**: Deleted `MOCK_RESULTS` (14 entries), `MODELS` hardcoded list, and `MockResult` interface
-2. **Added API hooks**: `useResults()`, `useBenchmarks()`, `useModels()` from `@/hooks/use-api`
-3. **Defined extended types**: `BenchmarkWithRelations`, `ResultWithTask`, `ReportResult` for mapping API data
-4. **Field mappings**: `timeToFirstTokenMs→ttftMs`, `timePerOutputTokenMs→tpotMs`, `gpuMemoryUsedGb→gpuMemGb`, `gpuUtilization→gpuUtil`, `cpuUtilization→cpuUtil`
-5. **Data joining**: Built taskMap from benchmarks data, used to enrich results with model name, engine, scenario, concurrency
-6. **Loading/error/empty states**: Added skeleton components, error banner, empty data message
-7. **Filter dropdowns**: Model filter now uses names from API data
-8. **Export functions**: Added guard for empty data
-9. **Cleanup**: Removed unused imports (TrendingDown, Zap, ArrowDown, Cpu, HardDrive, Line, ReferenceLine, Separator, VLLM_COLOR_LIGHT, SGLANG_COLOR_LIGHT)
-
-## Verification
-- ESLint: 0 errors (1 pre-existing warning in use-api.ts)
+- Read worklog.md to understand project context (InferBench - VLLM/SGLang inference engine platform)
+- Read models-page.tsx (1497 lines) to understand existing structure: ModelCard, ModelFormDialog, ModelDetailSheet (with Performance Radar), ModelsPage
+- Updated Recharts imports: added ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid
+- Updated Lucide imports: added TrendingUp, TrendingDown, Activity, Calendar
+- Created `generatePerformanceHistory()` function with realistic data generation:
+  - Infers model size from name (70B/72B/671B = large, 34B/32B/14B = medium, 7B/8B/3B = small)
+  - Base throughput varies by model size (large=1200, medium=2800, small=5500 tok/s)
+  - SGLang engines get 8% throughput boost
+  - GPU count scales throughput (+15% per additional GPU)
+  - Seeded pseudo-random for consistent data per model (using model.id as seed)
+  - Weekend dips (15% lower throughput on Sat/Sun)
+  - Improvement trend (up to 8% improvement over the period - model optimizations)
+  - Day-to-day correlation (30% previous + 70% target) for smooth curves
+  - Latency inversely correlated with throughput + independent noise
+- Created `PerformanceHistorySection` component with:
+  - Time range selector (7d / 30d / 90d) as pill buttons with primary/ghost styling
+  - ComposedChart with:
+    - X-axis: Date (format MM/DD, interval adapts to time range)
+    - Left Y-axis: Throughput (tok/s) as Area chart with emerald (#10b981) color
+    - Right Y-axis: Latency P99 (ms) as dashed Line with amber (#f59e0b) color
+    - CartesianGrid, Tooltip with dark mode support, Legend
+  - Summary stats grid (2x2):
+    - Avg Throughput with trend indicator (↑/↓ with percentage)
+    - Peak Throughput
+    - Avg Latency P99 with trend indicator (inverted - lower is better)
+    - Lowest Latency
+  - Trend calculation: compares first half vs second half of period
+  - Framer-motion entrance animation (opacity 0→1, y 12→0, 0.4s delay 0.1s)
+- Inserted PerformanceHistorySection into ModelDetailSheet between Performance Radar and detail rows
+- Widened Sheet from sm:max-w-lg to sm:max-w-xl to better accommodate the chart
+- Ran ESLint: 0 errors
 - Dev server compiles successfully
-- API endpoints returning 200 status
+
+## Stage Summary
+
+- Added Performance History Trend section to ModelDetailSheet with ComposedChart (Area + Line)
+- Realistic data generation with model-size-aware throughput, weekend dips, improvement trends, seeded randomness
+- Time range selector (7d/30d/90d) as pill buttons
+- Summary stats with trend indicators and color-coded values
+- Framer-motion entrance animation
+- Dark mode fully supported via CSS variables
+- Sheet widened to sm:max-w-xl for better chart display
+- Zero lint errors, dev server running without issues
