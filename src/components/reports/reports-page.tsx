@@ -21,8 +21,15 @@ import { Separator } from '@/components/ui/separator'
 import {
   TrendingUp, TrendingDown, Zap, Clock, BarChart3, Download,
   ArrowUp, ArrowDown, Cpu, HardDrive, Activity, Search,
-  ChevronDown, ChevronUp, Trophy,
+  ChevronDown, ChevronUp, Trophy, FileText, FileJson, Clipboard,
 } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { toast } from 'sonner'
 import type { EngineType, BenchmarkScenario } from '@/lib/types'
 
 // ─── Color Constants ─────────────────────────────────────────────
@@ -274,6 +281,100 @@ export default function ReportsPage() {
     return sortDir === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
   }
 
+  // ─── Export Functions ─────────────────────────────────────────
+  const getTimestamp = () => new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+
+  const csvHeaders = [
+    'Model', 'Engine', 'Scenario', 'Throughput (tok/s)', 'Throughput (req/s)',
+    'Latency Mean (ms)', 'Latency P50 (ms)', 'Latency P90 (ms)', 'Latency P99 (ms)',
+    'TTFT (ms)', 'TPOT (ms)', 'GPU Memory (GB)', 'GPU Util (%)',
+    'CPU Util (%)', 'Error Rate (%)', 'Concurrency',
+  ]
+
+  const exportAsCSV = () => {
+    const headerRow = csvHeaders.join(',')
+    const dataRows = filtered.map((r) =>
+      [
+        r.model,
+        r.engine,
+        r.scenario,
+        r.throughputTokensPerSec,
+        r.throughputRequestsPerSec,
+        r.latencyMeanMs,
+        r.latencyP50Ms,
+        r.latencyP90Ms,
+        r.latencyP99Ms,
+        r.ttftMs,
+        r.tpotMs,
+        r.gpuMemGb,
+        r.gpuUtil,
+        r.cpuUtil,
+        r.errorRate,
+        r.concurrency,
+      ].join(',')
+    )
+    const csv = [headerRow, ...dataRows].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `inferbench-report-${getTimestamp()}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    toast.success('CSV exported', { description: `${filtered.length} records downloaded` })
+  }
+
+  const exportAsJSON = () => {
+    const payload = {
+      metadata: {
+        exportDate: new Date().toISOString(),
+        filters: { model: modelFilter, engine: engineFilter, scenario: scenarioFilter },
+        totalRecords: filtered.length,
+      },
+      results: filtered,
+    }
+    const json = JSON.stringify(payload, null, 2)
+    const blob = new Blob([json], { type: 'application/json;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `inferbench-report-${getTimestamp()}.json`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    toast.success('JSON exported', { description: `${filtered.length} records downloaded` })
+  }
+
+  const copyToClipboard = async () => {
+    const headerRow = csvHeaders.join('\t')
+    const dataRows = filtered.map((r) =>
+      [
+        r.model,
+        r.engine,
+        r.scenario,
+        r.throughputTokensPerSec,
+        r.throughputRequestsPerSec,
+        r.latencyMeanMs,
+        r.latencyP50Ms,
+        r.latencyP90Ms,
+        r.latencyP99Ms,
+        r.ttftMs,
+        r.tpotMs,
+        r.gpuMemGb,
+        r.gpuUtil,
+        r.cpuUtil,
+        r.errorRate,
+        r.concurrency,
+      ].join('\t')
+    )
+    const text = [headerRow, ...dataRows].join('\n')
+    await navigator.clipboard.writeText(text)
+    toast.success('Copied to clipboard', { description: `${filtered.length} records copied` })
+  }
+
   // ─── Comparison Data ──────────────────────────────────────────
   const comparisonMetrics = [
     { name: 'Avg Throughput', vllm: vllmAvgThroughput, sglang: sglangAvgThroughput, unit: 'tok/s', higher: true },
@@ -327,10 +428,28 @@ export default function ReportsPage() {
               <SelectItem value="serving">Serving</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" size="sm" className="gap-1.5">
-            <Download className="w-4 h-4" />
-            Export Report
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-1.5">
+                <Download className="w-4 h-4" />
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={exportAsCSV}>
+                <FileText className="w-4 h-4" />
+                Export CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={exportAsJSON}>
+                <FileJson className="w-4 h-4" />
+                Export JSON
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={copyToClipboard}>
+                <Clipboard className="w-4 h-4" />
+                Copy to Clipboard
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 

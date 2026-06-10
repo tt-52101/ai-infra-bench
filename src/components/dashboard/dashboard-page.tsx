@@ -1,10 +1,11 @@
 'use client'
 
-import { Box, Play, Zap, Clock, ArrowRight, Plus, SlidersHorizontal, Activity, TrendingUp } from 'lucide-react'
+import { Box, Play, Zap, Clock, ArrowRight, Plus, SlidersHorizontal, Activity, TrendingUp, Server, HardDrive, Wifi, CheckCircle2, Info, XCircle, AlertTriangle } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardAction } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Progress } from '@/components/ui/progress'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
 import { useAppStore } from '@/lib/store'
@@ -476,6 +477,176 @@ export function DashboardPage() {
             </CardContent>
           </Card>
         </div>
+      </motion.div>
+
+      {/* ── System Health ───────────────────────────────────────────── */}
+      <motion.div variants={item}>
+        <h2 className="text-lg font-semibold tracking-tight mb-3">System Health</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* GPU Cluster */}
+          <Card className="py-0 gap-0">
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
+                    <Server className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-sm">GPU Cluster</p>
+                    <p className="text-xs text-muted-foreground">8/8 GPUs Active</p>
+                  </div>
+                </div>
+                <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 text-[11px] font-semibold border-0">
+                  Online
+                </Badge>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>GPU Utilization</span>
+                  <span className="font-medium text-foreground">73%</span>
+                </div>
+                <Progress value={73} className="h-2 [&>div]:bg-emerald-500" />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Memory Pool */}
+          <Card className="py-0 gap-0">
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-400">
+                    <HardDrive className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-sm">Memory Pool</p>
+                    <p className="text-xs text-muted-foreground">58.4 / 80 GB Used</p>
+                  </div>
+                </div>
+                <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 text-[11px] font-semibold border-0">
+                  Warning
+                </Badge>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Memory Usage</span>
+                  <span className="font-medium text-foreground">73%</span>
+                </div>
+                <Progress value={73} className="h-2 [&>div]:bg-amber-500" />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* API Endpoint */}
+          <Card className="py-0 gap-0">
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-50 text-sky-600 dark:bg-sky-950 dark:text-sky-400">
+                    <Wifi className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-sm">API Endpoint</p>
+                    <p className="text-xs text-muted-foreground">All services operational</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 text-[11px] font-semibold border-0">
+                    Healthy
+                  </Badge>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Response Time</span>
+                  <span className="font-medium text-foreground">12ms avg</span>
+                </div>
+                <Progress value={12} className="h-2 [&>div]:bg-sky-500" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </motion.div>
+
+      {/* ── Recent Activity Timeline ───────────────────────────────── */}
+      <motion.div variants={item}>
+        <h2 className="text-lg font-semibold tracking-tight mb-3">Recent Activity</h2>
+        <Card className="py-0 gap-0">
+          <CardContent className="p-5">
+            <div className="relative space-y-0">
+              {[
+                {
+                  icon: CheckCircle2,
+                  color: 'text-emerald-500',
+                  dotColor: 'bg-emerald-500',
+                  lineColor: 'bg-emerald-200 dark:bg-emerald-800',
+                  title: 'Benchmark completed: Qwen2.5-72B Multi-Stream',
+                  time: '5 min ago',
+                },
+                {
+                  icon: Info,
+                  color: 'text-sky-500',
+                  dotColor: 'bg-sky-500',
+                  lineColor: 'bg-sky-200 dark:bg-sky-800',
+                  title: 'Model deployed: LLaMA-3.1-70B',
+                  time: '23 min ago',
+                },
+                {
+                  icon: SlidersHorizontal,
+                  color: 'text-amber-500',
+                  dotColor: 'bg-amber-500',
+                  lineColor: 'bg-amber-200 dark:bg-amber-800',
+                  title: 'Parameter profile updated: High Throughput',
+                  time: '1h ago',
+                },
+                {
+                  icon: TrendingUp,
+                  color: 'text-sky-500',
+                  dotColor: 'bg-sky-500',
+                  lineColor: 'bg-sky-200 dark:bg-sky-800',
+                  title: 'New analysis: Concurrency vs Throughput',
+                  time: '2h ago',
+                },
+                {
+                  icon: XCircle,
+                  color: 'text-rose-500',
+                  dotColor: 'bg-rose-500',
+                  lineColor: 'bg-rose-200 dark:bg-rose-800',
+                  title: 'Benchmark failed: DeepSeek-V3 Burst Test',
+                  time: '3h ago',
+                  isLast: true,
+                },
+              ].map((activity, index) => {
+                const Icon = activity.icon
+                return (
+                  <motion.div
+                    key={index}
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.08, duration: 0.3 }}
+                    className="flex items-start gap-4 pb-6 last:pb-0"
+                  >
+                    {/* Timeline connector */}
+                    <div className="relative flex flex-col items-center">
+                      <div className={cn('h-8 w-8 rounded-full flex items-center justify-center shrink-0 bg-background border-2', activity.dotColor.replace('bg-', 'border-'))}>
+                        <Icon className={cn('h-4 w-4', activity.color)} />
+                      </div>
+                      {!activity.isLast && (
+                        <div className={cn('w-0.5 flex-1 mt-1', activity.lineColor)} />
+                      )}
+                    </div>
+                    {/* Content */}
+                    <div className="flex-1 min-w-0 pt-1">
+                      <p className="text-sm font-medium leading-snug">{activity.title}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{activity.time}</p>
+                    </div>
+                  </motion.div>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
       </motion.div>
     </motion.div>
   )
