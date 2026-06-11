@@ -22,6 +22,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { useI18n } from '@/hooks/use-i18n'
 
 // --- Icon mapping by notification type ---
 function getNotificationIcon(type: NotificationType) {
@@ -101,7 +102,7 @@ function getNotificationBorderAccent(type: NotificationType) {
 }
 
 // --- Relative time formatting ---
-function formatRelativeTime(timestamp: string): string {
+function formatRelativeTime(timestamp: string, t: (key: string, params?: Record<string, string | number>) => string): string {
   const now = Date.now()
   const time = new Date(timestamp).getTime()
   const diff = now - time
@@ -111,11 +112,31 @@ function formatRelativeTime(timestamp: string): string {
   const hours = Math.floor(minutes / 60)
   const days = Math.floor(hours / 24)
 
-  if (seconds < 60) return 'just now'
-  if (minutes < 60) return `${minutes}m ago`
-  if (hours < 24) return `${hours}h ago`
-  if (days < 7) return `${days}d ago`
+  if (seconds < 60) return t('dashboard.activity.justNow')
+  if (minutes < 60) return t('common.minutesAgo', { n: minutes })
+  if (hours < 24) return t('common.hoursAgo', { n: hours })
+  if (days < 7) return t('common.daysAgo', { n: days })
   return new Date(timestamp).toLocaleDateString()
+}
+
+// --- Notification title mapping ---
+function getNotificationTitle(type: NotificationType, t: (key: string) => string): string {
+  switch (type) {
+    case 'benchmark_completed':
+      return t('notifications.benchmarkCompleted')
+    case 'benchmark_failed':
+      return t('notifications.benchmarkFailed')
+    case 'model_deployed':
+      return t('notifications.modelDeployed')
+    case 'analysis_ready':
+      return t('notifications.analysisReady')
+    case 'system_alert':
+      return t('notifications.systemAlert')
+    case 'profile_updated':
+      return t('notifications.profileUpdated')
+    default:
+      return t('notifications.systemAlert')
+  }
 }
 
 // --- Mock notifications ---
@@ -181,16 +202,20 @@ function NotificationItem({
   notification,
   onRead,
   onClick,
+  t,
 }: {
   notification: Notification
   onRead: (id: string) => void
   onClick: (notification: Notification) => void
+  t: (key: string, params?: Record<string, string | number>) => string
 }) {
-  const { type, title, description, read, id } = notification
+  const { type, read, id } = notification
   const icon = getNotificationIcon(type)
   const iconColor = getNotificationIconColor(type)
   const iconBg = getNotificationIconBg(type)
   const borderAccent = getNotificationBorderAccent(type)
+  const title = getNotificationTitle(type, t)
+  const { description } = notification
 
   return (
     <motion.div
@@ -228,7 +253,7 @@ function NotificationItem({
           {description}
         </p>
         <p className="mt-1 text-[11px] text-muted-foreground/60">
-          {formatRelativeTime(notification.timestamp)}
+          {formatRelativeTime(notification.timestamp, t)}
         </p>
       </div>
     </motion.div>
@@ -237,6 +262,7 @@ function NotificationItem({
 
 // --- Main Notification Center Component ---
 export function NotificationCenter() {
+  const { t } = useI18n()
   const {
     notifications,
     setNotifications,
@@ -270,7 +296,7 @@ export function NotificationCenter() {
           variant="ghost"
           size="icon"
           className="relative h-8 w-8"
-          aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
+          aria-label={`${t('notifications.title')}${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
         >
           <Bell className="h-4 w-4" />
           {unreadCount > 0 && (
@@ -301,7 +327,7 @@ export function NotificationCenter() {
         {/* Header */}
         <div className="flex items-center justify-between border-b px-4 py-3">
           <div className="flex items-center gap-2">
-            <h4 className="text-sm font-semibold">Notifications</h4>
+            <h4 className="text-sm font-semibold">{t('notifications.title')}</h4>
             {unreadCount > 0 && (
               <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/10 px-1.5 text-[11px] font-medium text-primary">
                 {unreadCount}
@@ -316,7 +342,7 @@ export function NotificationCenter() {
               onClick={markAllAsRead}
             >
               <CheckCheck className="h-3.5 w-3.5" />
-              Mark all read
+              {t('notifications.markAllRead')}
             </Button>
           )}
         </div>
@@ -325,8 +351,8 @@ export function NotificationCenter() {
         {notifications.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <Bell className="h-10 w-10 text-muted-foreground/30 mb-3" />
-            <p className="text-sm font-medium text-muted-foreground">No notifications</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">You&apos;re all caught up!</p>
+            <p className="text-sm font-medium text-muted-foreground">{t('notifications.empty')}</p>
+            <p className="text-xs text-muted-foreground/60 mt-1">{t('notifications.allCaughtUp')}</p>
           </div>
         ) : (
           <ScrollArea className="max-h-[400px]">
@@ -337,6 +363,7 @@ export function NotificationCenter() {
                   notification={notification}
                   onRead={markAsRead}
                   onClick={handleClickNotification}
+                  t={t}
                 />
               ))}
             </AnimatePresence>
@@ -349,7 +376,7 @@ export function NotificationCenter() {
             className="flex w-full items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground hover:bg-accent/50"
             onClick={() => setActivePage('dashboard')}
           >
-            View all notifications
+            {t('notifications.viewAll')}
           </button>
         </div>
       </PopoverContent>

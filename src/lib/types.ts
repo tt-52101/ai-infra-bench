@@ -146,4 +146,4 @@ export interface Notification {
 }
 
 // 导航页面
-export type PageKey = 'dashboard' | 'models' | 'parameters' | 'benchmark' | 'reports' | 'analysis' | 'settings'
+export type PageKey = 'landing' | 'dashboard' | 'models' | 'parameters' | 'benchmark' | 'reports' | 'analysis' | 'settings'

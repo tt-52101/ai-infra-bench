@@ -3,45 +3,46 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Keyboard, X } from 'lucide-react'
+import { useI18n } from '@/hooks/use-i18n'
 
 // ─── Shortcut Data ──────────────────────────────────────────────────
 
 interface ShortcutItem {
-  description: string
+  descriptionKey: string
   keys: string[]
 }
 
 interface ShortcutGroup {
-  title: string
+  titleKey: string
   items: ShortcutItem[]
 }
 
 const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
-    title: 'Navigation',
+    titleKey: 'shortcuts.group.navigation',
     items: [
-      { description: 'Dashboard', keys: ['⌘', '1'] },
-      { description: 'Models', keys: ['⌘', '2'] },
-      { description: 'Parameters', keys: ['⌘', '3'] },
-      { description: 'Benchmark', keys: ['⌘', '4'] },
-      { description: 'Reports', keys: ['⌘', '5'] },
-      { description: 'Analysis', keys: ['⌘', '6'] },
-      { description: 'Settings', keys: ['⌘', '7'] },
+      { descriptionKey: 'nav.dashboard', keys: ['⌘', '1'] },
+      { descriptionKey: 'nav.models', keys: ['⌘', '2'] },
+      { descriptionKey: 'nav.parameters', keys: ['⌘', '3'] },
+      { descriptionKey: 'nav.benchmark', keys: ['⌘', '4'] },
+      { descriptionKey: 'nav.reports', keys: ['⌘', '5'] },
+      { descriptionKey: 'nav.analysis', keys: ['⌘', '6'] },
+      { descriptionKey: 'nav.settings', keys: ['⌘', '7'] },
     ],
   },
   {
-    title: 'General',
+    titleKey: 'shortcuts.group.general',
     items: [
-      { description: 'Command Palette', keys: ['⌘', 'K'] },
-      { description: 'Keyboard Shortcuts', keys: ['?'] },
-      { description: 'Toggle Theme', keys: ['⌘', '⇧', 'D'] },
+      { descriptionKey: 'shortcuts.commandPalette', keys: ['⌘', 'K'] },
+      { descriptionKey: 'shortcuts.keyboardShortcuts', keys: ['?'] },
+      { descriptionKey: 'shortcuts.toggleTheme', keys: ['⌘', '⇧', 'D'] },
     ],
   },
   {
-    title: 'Actions',
+    titleKey: 'shortcuts.group.actions',
     items: [
-      { description: 'New Benchmark', keys: ['⌘', 'B'] },
-      { description: 'Add Model', keys: ['⌘', 'M'] },
+      { descriptionKey: 'shortcuts.newBenchmark', keys: ['⌘', 'B'] },
+      { descriptionKey: 'shortcuts.addModel', keys: ['⌘', 'M'] },
     ],
   },
 ]
@@ -59,6 +60,7 @@ function Kbd({ children }: { children: React.ReactNode }) {
 // ─── Main Component ─────────────────────────────────────────────────
 
 export function KeyboardShortcutsHelp() {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
 
   const handleClose = useCallback(() => {
@@ -137,7 +139,7 @@ export function KeyboardShortcutsHelp() {
               transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
               role="dialog"
               aria-modal="true"
-              aria-label="Keyboard Shortcuts"
+              aria-label={t('shortcuts.title')}
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
@@ -146,12 +148,12 @@ export function KeyboardShortcutsHelp() {
                   <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
                     <Keyboard className="h-5 w-5" />
                   </div>
-                  <h2 className="text-lg font-semibold">Keyboard Shortcuts</h2>
+                  <h2 className="text-lg font-semibold">{t('shortcuts.title')}</h2>
                 </div>
                 <button
                   onClick={handleClose}
                   className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  aria-label="Close"
+                  aria-label={t('common.close')}
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -161,25 +163,25 @@ export function KeyboardShortcutsHelp() {
               <div className="max-h-[60vh] overflow-y-auto px-6 py-4">
                 <div className="space-y-6">
                   {SHORTCUT_GROUPS.map((group) => (
-                    <div key={group.title}>
+                    <div key={group.titleKey}>
                       {/* Group Header */}
                       <h3 className="mb-3 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                        {group.title}
+                        {t(group.titleKey)}
                       </h3>
 
                       {/* Shortcut Rows */}
                       <div className="space-y-2">
                         {group.items.map((item) => (
                           <div
-                            key={item.description}
+                            key={item.descriptionKey}
                             className="flex items-center justify-between rounded-md px-3 py-2 transition-colors hover:bg-muted/50"
                           >
                             <span className="text-sm text-foreground">
-                              {item.description}
+                              {t(item.descriptionKey)}
                             </span>
                             <div className="flex items-center gap-1">
                               {item.keys.map((key, i) => (
-                                <React.Fragment key={`${item.description}-${key}-${i}`}>
+                                <React.Fragment key={`${item.descriptionKey}-${key}-${i}`}>
                                   {i > 0 && (
                                     <span className="text-xs text-muted-foreground">+</span>
                                   )}
@@ -198,11 +200,7 @@ export function KeyboardShortcutsHelp() {
               {/* Footer */}
               <div className="border-t px-6 py-3">
                 <p className="text-center text-xs text-muted-foreground">
-                  Press{' '}
-                  <Kbd>?</Kbd>
-                  {' '}or{' '}
-                  <Kbd>Esc</Kbd>
-                  {' '}to close
+                  {t('shortcuts.pressToClose')}
                 </p>
               </div>
             </motion.div>

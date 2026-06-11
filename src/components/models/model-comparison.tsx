@@ -48,6 +48,7 @@ import {
   ChartLegendContent,
   type ChartConfig,
 } from '@/components/ui/chart'
+import { useI18n } from '@/hooks/use-i18n'
 
 // ─── Color Palette ──────────────────────────────────────────────────────────
 
@@ -74,7 +75,7 @@ interface ModelComparisonProps {
 
 // ─── Helper Components ──────────────────────────────────────────────────────
 
-function EngineBadge({ engine }: { engine: EngineType }) {
+function EngineBadge({ engine, t }: { engine: EngineType; t: (key: string) => string }) {
   return (
     <Badge
       className={
@@ -84,7 +85,7 @@ function EngineBadge({ engine }: { engine: EngineType }) {
       }
     >
       <Server className="size-3" />
-      {engine === 'vllm' ? 'VLLM' : 'SGLang'}
+      {engine === 'vllm' ? t('common.vllm') : t('common.sglang')}
     </Badge>
   )
 }
@@ -92,6 +93,8 @@ function EngineBadge({ engine }: { engine: EngineType }) {
 // ─── Main Component ─────────────────────────────────────────────────────────
 
 export default function ModelComparison({ selectedModels, allResults, onBack }: ModelComparisonProps) {
+  const { t } = useI18n()
+
   // Build performance data for each selected model
   const modelPerformances: ModelPerformance[] = useMemo(() => {
     return selectedModels.map((model, index) => {
@@ -232,8 +235,8 @@ export default function ModelComparison({ selectedModels, allResults, onBack }: 
   }, [modelPerformances])
 
   const barChartConfig: ChartConfig = {
-    throughput: { label: 'Throughput (tokens/s)', color: '#10b981' },
-    latency: { label: 'Latency P99 (ms)', color: '#f59e0b' },
+    throughput: { label: `Throughput (${t('common.tokensPerSec')})`, color: '#10b981' },
+    latency: { label: `Latency P99 (${t('common.ms')})`, color: '#f59e0b' },
   }
 
   // ─── Performance Metrics per Model ───────────────────────────────────
@@ -288,12 +291,12 @@ export default function ModelComparison({ selectedModels, allResults, onBack }: 
         <div className="size-16 rounded-full bg-muted flex items-center justify-center mb-4">
           <BarChart3 className="size-8 text-muted-foreground" />
         </div>
-        <h3 className="text-lg font-semibold mb-1">Select models to compare</h3>
+        <h3 className="text-lg font-semibold mb-1">{t('models.selectModels')}</h3>
         <p className="text-sm text-muted-foreground max-w-sm">
-          Choose at least 2 models from the list to start a side-by-side comparison.
+          {t('models.comparingModels', { count: 2 })}
         </p>
         <Button variant="outline" className="mt-4" onClick={onBack}>
-          Back to Models
+          {t('models.backToModels')}
         </Button>
       </motion.div>
     )
@@ -309,9 +312,9 @@ export default function ModelComparison({ selectedModels, allResults, onBack }: 
         className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
       >
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Model Comparison</h2>
+          <h2 className="text-2xl font-bold tracking-tight">{t('models.compareModels')}</h2>
           <p className="text-muted-foreground text-sm mt-1">
-            Comparing {selectedModels.length} models side-by-side
+            {t('models.comparingModels', { count: selectedModels.length })}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -323,7 +326,7 @@ export default function ModelComparison({ selectedModels, allResults, onBack }: 
             >
               <span className={`size-2 rounded-full ${MODEL_COLORS[i % MODEL_COLORS.length].bg}`} />
               {model.name}
-              <EngineBadge engine={model.engine} />
+              <EngineBadge engine={model.engine} t={t} />
             </Badge>
           ))}
         </div>
@@ -339,7 +342,7 @@ export default function ModelComparison({ selectedModels, allResults, onBack }: 
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <Activity className="size-4" />
-              Multi-Dimensional Comparison
+              {t('models.multiDimComparison')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -384,7 +387,7 @@ export default function ModelComparison({ selectedModels, allResults, onBack }: 
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <Layers className="size-4" />
-              Specifications Comparison
+              {t('models.specsComparison')}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
@@ -393,7 +396,7 @@ export default function ModelComparison({ selectedModels, allResults, onBack }: 
                 <thead>
                   <tr className="border-b bg-muted/50">
                     <th className="text-left p-3 font-medium text-muted-foreground sticky left-0 bg-muted/50 min-w-[140px]">
-                      Property
+                      {t('models.property')}
                     </th>
                     {selectedModels.map((model, i) => (
                       <th key={model.id} className="text-center p-3 font-medium min-w-[160px]">
@@ -407,20 +410,20 @@ export default function ModelComparison({ selectedModels, allResults, onBack }: 
                 </thead>
                 <tbody>
                   {[
-                    { label: 'Engine', icon: <Server className="size-3.5" />, render: (m: ModelInfo) => <EngineBadge engine={m.engine} /> },
-                    { label: 'GPU Type', icon: <Cpu className="size-3.5" />, render: (m: ModelInfo) => m.gpuType },
-                    { label: 'GPU Count', icon: <Layers className="size-3.5" />, render: (m: ModelInfo) => `×${m.gpuCount}` },
-                    { label: 'Seq Length', icon: <Gauge className="size-3.5" />, render: (m: ModelInfo) => m.maxSeqLen.toLocaleString() },
+                    { label: t('common.engine'), icon: <Server className="size-3.5" />, render: (m: ModelInfo) => <EngineBadge engine={m.engine} t={t} /> },
+                    { label: t('models.gpuType'), icon: <Cpu className="size-3.5" />, render: (m: ModelInfo) => m.gpuType },
+                    { label: t('models.gpuCount'), icon: <Layers className="size-3.5" />, render: (m: ModelInfo) => `×${m.gpuCount}` },
+                    { label: t('models.maxSeqLength'), icon: <Gauge className="size-3.5" />, render: (m: ModelInfo) => m.maxSeqLen.toLocaleString() },
                     { label: 'dtype', icon: <HardDrive className="size-3.5" />, render: (m: ModelInfo) => m.dtype },
                     { label: 'TP', icon: <Layers className="size-3.5" />, render: (m: ModelInfo) => m.tensorParallelSize },
                     { label: 'PP', icon: <Layers className="size-3.5" />, render: (m: ModelInfo) => m.pipelineParallelSize },
-                    { label: 'Status', icon: <Activity className="size-3.5" />, render: (m: ModelInfo) => (
+                    { label: t('common.status'), icon: <Activity className="size-3.5" />, render: (m: ModelInfo) => (
                       <span className="inline-flex items-center gap-1.5">
                         <span className={`size-2 rounded-full ${m.status === 'active' ? 'bg-emerald-500' : m.status === 'error' ? 'bg-red-500' : 'bg-gray-400'}`} />
                         {m.status.charAt(0).toUpperCase() + m.status.slice(1)}
                       </span>
                     )},
-                    { label: 'Version', icon: null, render: (m: ModelInfo) => `v${m.version}` },
+                    { label: t('common.version'), icon: null, render: (m: ModelInfo) => `v${m.version}` },
                   ].map((row, rowIdx) => (
                     <tr key={row.label} className={rowIdx % 2 === 0 ? '' : 'bg-muted/30'}>
                       <td className="p-3 text-muted-foreground font-medium sticky left-0 bg-background">
@@ -451,7 +454,7 @@ export default function ModelComparison({ selectedModels, allResults, onBack }: 
       >
         <div className="flex items-center gap-2 mb-3">
           <Zap className="size-4 text-muted-foreground" />
-          <h3 className="text-base font-semibold">Performance Metrics</h3>
+          <h3 className="text-base font-semibold">{t('models.performanceMetrics')}</h3>
         </div>
         <div className={`grid gap-4 ${selectedModels.length <= 2 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-' + Math.min(selectedModels.length, 4)}`}>
           {metricsPerModel.map((mp) => {
@@ -462,7 +465,7 @@ export default function ModelComparison({ selectedModels, allResults, onBack }: 
                   <div className="flex items-center gap-2">
                     <span className={`size-3 rounded-full ${color.bg}`} />
                     <CardTitle className="text-sm font-semibold truncate">{mp.model.name}</CardTitle>
-                    <EngineBadge engine={mp.model.engine} />
+                    <EngineBadge engine={mp.model.engine} t={t} />
                   </div>
                 </CardHeader>
                 <CardContent className="px-4 pb-4 space-y-3">
@@ -471,22 +474,22 @@ export default function ModelComparison({ selectedModels, allResults, onBack }: 
                     <div className="rounded-md bg-muted/50 p-2">
                       <div className="text-xs text-muted-foreground flex items-center gap-1">
                         <TrendingUp className="size-3" />
-                        Best Throughput
+                        {t('models.peakThroughput')}
                       </div>
                       <div className={`text-lg font-bold ${color.text}`}>
                         {mp.bestThroughput > 0 ? `${mp.bestThroughput.toLocaleString()}` : 'N/A'}
                       </div>
-                      <div className="text-xs text-muted-foreground">tokens/s</div>
+                      <div className="text-xs text-muted-foreground">{t('common.tokensPerSec')}</div>
                     </div>
                     <div className="rounded-md bg-muted/50 p-2">
                       <div className="text-xs text-muted-foreground flex items-center gap-1">
                         <Clock className="size-3" />
-                        Avg Latency P99
+                        {t('models.avgLatency')} P99
                       </div>
                       <div className={`text-lg font-bold ${color.text}`}>
                         {mp.avgLatencyP99 > 0 ? `${mp.avgLatencyP99.toLocaleString()}` : 'N/A'}
                       </div>
-                      <div className="text-xs text-muted-foreground">ms</div>
+                      <div className="text-xs text-muted-foreground">{t('common.ms')}</div>
                     </div>
                     <div className="rounded-md bg-muted/50 p-2">
                       <div className="text-xs text-muted-foreground flex items-center gap-1">
@@ -494,7 +497,7 @@ export default function ModelComparison({ selectedModels, allResults, onBack }: 
                         TTFT
                       </div>
                       <div className={`text-sm font-bold ${color.text}`}>
-                        {mp.avgTTFT > 0 ? `${mp.avgTTFT.toLocaleString()} ms` : 'N/A'}
+                        {mp.avgTTFT > 0 ? `${mp.avgTTFT.toLocaleString()} ${t('common.ms')}` : 'N/A'}
                       </div>
                     </div>
                     <div className="rounded-md bg-muted/50 p-2">
@@ -503,7 +506,7 @@ export default function ModelComparison({ selectedModels, allResults, onBack }: 
                         TPOT
                       </div>
                       <div className={`text-sm font-bold ${color.text}`}>
-                        {mp.avgTPOT > 0 ? `${mp.avgTPOT} ms` : 'N/A'}
+                        {mp.avgTPOT > 0 ? `${mp.avgTPOT} ${t('common.ms')}` : 'N/A'}
                       </div>
                     </div>
                   </div>
@@ -525,7 +528,7 @@ export default function ModelComparison({ selectedModels, allResults, onBack }: 
                   {/* Sparkline */}
                   {mp.sparkline.length > 1 && (
                     <div>
-                      <div className="text-xs text-muted-foreground mb-1">Throughput Trend</div>
+                      <div className="text-xs text-muted-foreground mb-1">{t('models.throughputTrend')}</div>
                       <ChartContainer config={sparklineConfig} className="aspect-[3/1] w-full">
                         <AreaChart data={mp.sparkline}>
                           <defs>
@@ -550,7 +553,7 @@ export default function ModelComparison({ selectedModels, allResults, onBack }: 
                   {mp.results.length === 0 && (
                     <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
                       <AlertTriangle className="size-3" />
-                      No benchmark results available
+                      {t('models.noBenchmarkResults')}
                     </div>
                   )}
                 </CardContent>
@@ -570,7 +573,7 @@ export default function ModelComparison({ selectedModels, allResults, onBack }: 
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <BarChart3 className="size-4" />
-              Throughput &amp; Latency Comparison
+              {t('models.throughputLatencyComparison')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -588,14 +591,14 @@ export default function ModelComparison({ selectedModels, allResults, onBack }: 
                     orientation="left"
                     tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
                     axisLine={{ stroke: 'hsl(var(--border))' }}
-                    label={{ value: 'tokens/s', angle: -90, position: 'insideLeft', style: { fill: 'hsl(var(--muted-foreground))', fontSize: 11 } }}
+                    label={{ value: t('common.tokensPerSec'), angle: -90, position: 'insideLeft', style: { fill: 'hsl(var(--muted-foreground))', fontSize: 11 } }}
                   />
                   <YAxis
                     yAxisId="latency"
                     orientation="right"
                     tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
                     axisLine={{ stroke: 'hsl(var(--border))' }}
-                    label={{ value: 'ms', angle: 90, position: 'insideRight', style: { fill: 'hsl(var(--muted-foreground))', fontSize: 11 } }}
+                    label={{ value: t('common.ms'), angle: 90, position: 'insideRight', style: { fill: 'hsl(var(--muted-foreground))', fontSize: 11 } }}
                   />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <ChartLegend content={<ChartLegendContent />} />
@@ -618,8 +621,8 @@ export default function ModelComparison({ selectedModels, allResults, onBack }: 
             ) : (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <BarChart3 className="size-10 text-muted-foreground mb-3" />
-                <p className="text-sm text-muted-foreground">No benchmark data available for comparison.</p>
-                <p className="text-xs text-muted-foreground mt-1">Run benchmarks on these models to see comparison charts.</p>
+                <p className="text-sm text-muted-foreground">{t('models.noComparisonData')}</p>
+                <p className="text-xs text-muted-foreground mt-1">{t('models.runBenchmarksHint')}</p>
               </div>
             )}
           </CardContent>

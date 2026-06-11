@@ -31,6 +31,7 @@ import {
   CommandShortcut,
   CommandSeparator,
 } from '@/components/ui/command'
+import { useI18n } from '@/hooks/use-i18n'
 
 // ── Recent Actions (localStorage) ──────────────────────────────────────────
 
@@ -65,29 +66,47 @@ function addRecentCommand(id: string, label: string) {
 
 // ── Navigation Items ────────────────────────────────────────────────────────
 
-const NAV_ITEMS: { id: PageKey; label: string; icon: React.ReactNode; shortcut?: string }[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="size-4 text-emerald-500" /> },
-  { id: 'models', label: 'Models', icon: <Box className="size-4 text-emerald-500" /> },
-  { id: 'parameters', label: 'Parameters', icon: <SlidersHorizontal className="size-4 text-emerald-500" /> },
-  { id: 'benchmark', label: 'Benchmark', icon: <Gauge className="size-4 text-amber-500" /> },
-  { id: 'reports', label: 'Reports', icon: <FileBarChart className="size-4 text-amber-500" /> },
-  { id: 'analysis', label: 'Analysis', icon: <TrendingUp className="size-4 text-amber-500" /> },
-  { id: 'settings', label: 'Settings', icon: <Settings className="size-4 text-muted-foreground" /> },
+const NAV_ITEMS: { id: PageKey; icon: React.ReactNode; shortcut?: string }[] = [
+  { id: 'dashboard', icon: <LayoutDashboard className="size-4 text-emerald-500" /> },
+  { id: 'models', icon: <Box className="size-4 text-emerald-500" /> },
+  { id: 'parameters', icon: <SlidersHorizontal className="size-4 text-emerald-500" /> },
+  { id: 'benchmark', icon: <Gauge className="size-4 text-amber-500" /> },
+  { id: 'reports', icon: <FileBarChart className="size-4 text-amber-500" /> },
+  { id: 'analysis', icon: <TrendingUp className="size-4 text-amber-500" /> },
+  { id: 'settings', icon: <Settings className="size-4 text-muted-foreground" /> },
 ]
 
 // ── Action Items ────────────────────────────────────────────────────────────
 
-const ACTION_ITEMS: { id: string; label: string; icon: React.ReactNode; shortcut?: string }[] = [
-  { id: 'new_benchmark', label: 'New Benchmark', icon: <Plus className="size-4 text-amber-500" />, shortcut: '⌘B' },
-  { id: 'add_model', label: 'Add Model', icon: <Plus className="size-4 text-emerald-500" />, shortcut: '⌘M' },
-  { id: 'import_presets', label: 'Import Presets', icon: <Upload className="size-4 text-emerald-500" /> },
-  { id: 'export_report', label: 'Export Report', icon: <Download className="size-4 text-amber-500" /> },
-  { id: 'new_analysis', label: 'New Analysis', icon: <Sparkles className="size-4 text-amber-500" /> },
+const ACTION_ITEMS: { id: string; icon: React.ReactNode; shortcut?: string }[] = [
+  { id: 'new_benchmark', icon: <Plus className="size-4 text-amber-500" />, shortcut: '⌘B' },
+  { id: 'add_model', icon: <Plus className="size-4 text-emerald-500" />, shortcut: '⌘M' },
+  { id: 'import_presets', icon: <Upload className="size-4 text-emerald-500" /> },
+  { id: 'export_report', icon: <Download className="size-4 text-amber-500" /> },
+  { id: 'new_analysis', icon: <Sparkles className="size-4 text-amber-500" /> },
 ]
+
+// ── Action label mapping ────────────────────────────────────────────────────
+
+function getActionLabel(id: string, t: (key: string) => string): string {
+  switch (id) {
+    case 'new_benchmark': return t('shortcuts.newBenchmark')
+    case 'add_model': return t('shortcuts.addModel')
+    case 'import_presets': return t('parameters.importPresets')
+    case 'export_report': return t('common.export')
+    case 'new_analysis': return t('analysis.newAnalysis')
+    default: return id
+  }
+}
+
+function getNavLabel(id: PageKey, t: (key: string) => string): string {
+  return t(`nav.${id}`)
+}
 
 // ── Command Palette Component ───────────────────────────────────────────────
 
 export function CommandPalette() {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const [recentCommands, setRecentCommands] = useState<RecentCommand[]>(() => getRecentCommands())
   const { theme, setTheme } = useTheme()
@@ -182,23 +201,23 @@ export function CommandPalette() {
       keywords: `${m.name} ${m.engine} ${m.modelPath}`,
     })) ?? []
 
-  const toggleThemeLabel = theme === 'dark' ? 'Toggle Light Mode' : 'Toggle Dark Mode'
+  const toggleThemeLabel = theme === 'dark' ? t('commandPalette.toggleLight') : t('commandPalette.toggleDark')
 
   return (
       <CommandDialog
         open={open}
         onOpenChange={setOpen}
-        title="Command Palette"
-        description="Search for a command to run..."
+        title={t('commandPalette.title')}
+        description={t('commandPalette.description')}
         className="sm:max-w-lg"
       >
-        <CommandInput placeholder="Type a command or search models..." />
+        <CommandInput placeholder={t('commandPalette.placeholder')} />
         <CommandList className="max-h-[360px]">
-          <CommandEmpty>No results found.</CommandEmpty>
+          <CommandEmpty>{t('commandPalette.noResults')}</CommandEmpty>
 
           {/* Recent Commands */}
           {recentItems.length > 0 && (
-            <CommandGroup heading="Recent">
+            <CommandGroup heading={t('commandPalette.group.recent')}>
               {recentItems.map((item) => (
                 <CommandItem
                   key={`recent-${item.id}`}
@@ -213,41 +232,47 @@ export function CommandPalette() {
           )}
 
           {/* Navigation */}
-          <CommandGroup heading="Navigation">
-            {NAV_ITEMS.map((item) => (
-              <CommandItem
-                key={item.id}
-                value={`nav-${item.label}`}
-                onSelect={() => executeCommand(item.id, item.label)}
-              >
-                {item.icon}
-                <span>Go to {item.label}</span>
-              </CommandItem>
-            ))}
+          <CommandGroup heading={t('commandPalette.group.navigation')}>
+            {NAV_ITEMS.map((item) => {
+              const label = getNavLabel(item.id, t)
+              return (
+                <CommandItem
+                  key={item.id}
+                  value={`nav-${label}`}
+                  onSelect={() => executeCommand(item.id, label)}
+                >
+                  {item.icon}
+                  <span>{t('commandPalette.goTo', { page: label })}</span>
+                </CommandItem>
+              )
+            })}
           </CommandGroup>
 
           <CommandSeparator />
 
           {/* Actions */}
-          <CommandGroup heading="Actions">
-            {ACTION_ITEMS.map((item) => (
-              <CommandItem
-                key={item.id}
-                value={`action-${item.label}`}
-                onSelect={() => executeCommand(item.id, item.label)}
-              >
-                {item.icon}
-                <span>{item.label}</span>
-                {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
-              </CommandItem>
-            ))}
+          <CommandGroup heading={t('commandPalette.group.actions')}>
+            {ACTION_ITEMS.map((item) => {
+              const label = getActionLabel(item.id, t)
+              return (
+                <CommandItem
+                  key={item.id}
+                  value={`action-${label}`}
+                  onSelect={() => executeCommand(item.id, label)}
+                >
+                  {item.icon}
+                  <span>{label}</span>
+                  {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
+                </CommandItem>
+              )
+            })}
           </CommandGroup>
 
           <CommandSeparator />
 
           {/* Search Models */}
           {modelItems.length > 0 && (
-            <CommandGroup heading="Models">
+            <CommandGroup heading={t('commandPalette.group.models')}>
               {modelItems.map((item) => (
                 <CommandItem
                   key={item.id}
@@ -257,7 +282,7 @@ export function CommandPalette() {
                   {item.icon}
                   <span>{item.label}</span>
                   <span className="ml-1 text-xs text-muted-foreground">
-                    {item.keywords.includes('vllm') ? '(vLLM)' : '(SGLang)'}
+                    {item.keywords.includes('vllm') ? `(${t('common.vllm')})` : `(${t('common.sglang')})`}
                   </span>
                 </CommandItem>
               ))}
@@ -267,7 +292,7 @@ export function CommandPalette() {
           <CommandSeparator />
 
           {/* Settings */}
-          <CommandGroup heading="Settings">
+          <CommandGroup heading={t('commandPalette.group.settings')}>
             <CommandItem
               value="setting-toggle-theme"
               onSelect={() => executeCommand('toggle_theme', toggleThemeLabel)}

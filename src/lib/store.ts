@@ -60,7 +60,7 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set) => ({
   // 导航
-  activePage: 'dashboard',
+  activePage: 'landing',
   setActivePage: (page) => set({ activePage: page }),
 
   // 命令面板动作信号

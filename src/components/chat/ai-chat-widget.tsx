@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import ReactMarkdown from 'react-markdown'
+import { useI18n } from '@/hooks/use-i18n'
 
 interface ChatMessage {
   id: string
@@ -36,7 +37,7 @@ function TypingIndicator() {
   )
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({ message, userLabel }: { message: ChatMessage; userLabel: string }) {
   const isUser = message.role === 'user'
 
   return (
@@ -73,10 +74,20 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   )
 }
 
-const WELCOME_MESSAGE: ChatMessage = {
-  id: 'welcome',
-  role: 'assistant',
-  content: `👋 Hello! I'm your **InferBench AI Assistant**, specialized in vLLM/SGLang inference engine optimization.
+export function AIChatWidget() {
+  const { t } = useI18n()
+  const [isOpen, setIsOpen] = useState(false)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [inputValue, setInputValue] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Create welcome message using t() - store it separately
+  const welcomeMessage: ChatMessage = {
+    id: 'welcome',
+    role: 'assistant',
+    content: `👋 Hello! I'm your **${t('chat.title')}**, specialized in vLLM/SGLang inference engine optimization.
 
 I can help you with:
 
@@ -86,16 +97,11 @@ I can help you with:
 - **Inflection points** — Identify optimal parameter ranges
 
 What would you like to optimize today?`,
-  timestamp: new Date(),
-}
+    timestamp: new Date(),
+  }
 
-export function AIChatWidget() {
-  const [isOpen, setIsOpen] = useState(false)
-  const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE])
-  const [inputValue, setInputValue] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  // Initialize messages with welcome message
+  const displayMessages = messages.length === 0 ? [welcomeMessage] : messages
 
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
@@ -108,7 +114,7 @@ export function AIChatWidget() {
 
   useEffect(() => {
     scrollToBottom()
-  }, [messages, isLoading, scrollToBottom])
+  }, [displayMessages, isLoading, scrollToBottom])
 
   useEffect(() => {
     if (isOpen && inputRef.current) {
@@ -194,7 +200,7 @@ export function AIChatWidget() {
             transition={{ type: 'spring', stiffness: 300, damping: 20 }}
             onClick={() => setIsOpen(true)}
             className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-shadow cursor-pointer"
-            aria-label="Open AI Assistant"
+            aria-label={t('chat.openAssistant')}
           >
             <Sparkles className="h-6 w-6 text-white" />
             {/* Pulse animation ring */}
@@ -220,8 +226,8 @@ export function AIChatWidget() {
                   <Sparkles className="h-4 w-4 text-white" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-foreground">AI Assistant</h3>
-                  <p className="text-xs text-muted-foreground">InferBench Optimization Expert</p>
+                  <h3 className="text-sm font-semibold text-foreground">{t('chat.title')}</h3>
+                  <p className="text-xs text-muted-foreground">{t('chat.subtitle')}</p>
                 </div>
               </div>
               <Button
@@ -229,7 +235,7 @@ export function AIChatWidget() {
                 size="icon"
                 className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
                 onClick={() => setIsOpen(false)}
-                aria-label="Minimize chat"
+                aria-label={t('chat.minimize')}
               >
                 <X className="h-4 w-4" />
               </Button>
@@ -237,8 +243,8 @@ export function AIChatWidget() {
 
             {/* Messages */}
             <ScrollArea ref={scrollRef} className="flex-1 px-4 py-3 sm:max-h-[400px] max-h-[calc(100vh-180px)]">
-              {messages.map(msg => (
-                <MessageBubble key={msg.id} message={msg} />
+              {displayMessages.map(msg => (
+                <MessageBubble key={msg.id} message={msg} userLabel={t('common.user')} />
               ))}
               {isLoading && <TypingIndicator />}
             </ScrollArea>
@@ -251,7 +257,7 @@ export function AIChatWidget() {
                   value={inputValue}
                   onChange={e => setInputValue(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Ask about optimization..."
+                  placeholder={t('chat.placeholder')}
                   disabled={isLoading}
                   className="flex-1 h-10 text-sm bg-muted/50 border-0 focus-visible:ring-1 focus-visible:ring-emerald-500/50"
                 />
@@ -260,7 +266,7 @@ export function AIChatWidget() {
                   onClick={handleSend}
                   disabled={isLoading || !inputValue.trim()}
                   className="h-10 w-10 shrink-0 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-sm disabled:opacity-50"
-                  aria-label="Send message"
+                  aria-label={t('chat.send')}
                 >
                   {isLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -270,7 +276,7 @@ export function AIChatWidget() {
                 </Button>
               </div>
               <p className="mt-1.5 text-[10px] text-muted-foreground/60 text-center">
-                AI responses may not always be accurate. Verify critical configurations.
+                {t('chat.disclaimer')}
               </p>
             </div>
           </motion.div>

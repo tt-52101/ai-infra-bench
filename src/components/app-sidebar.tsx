@@ -1,6 +1,6 @@
 'use client'
 
-import { Cpu, LayoutDashboard, Box, SlidersHorizontal, Play, BarChart3, TrendingUp, Settings, Globe, Wifi, WifiOff, AlertTriangle } from 'lucide-react'
+import { Cpu, LayoutDashboard, Rocket, Box, SlidersHorizontal, Play, BarChart3, TrendingUp, Settings, Globe, Wifi, WifiOff, AlertTriangle } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '@/lib/store'
@@ -56,7 +56,7 @@ function MiniBadge({ count, variant = 'default' }: { count: number; variant?: 'd
   )
 }
 
-function RunningBadge({ count }: { count: number }) {
+function RunningBadge({ count, t }: { count: number; t: (key: string) => string }) {
   if (count <= 0) return null
   return (
     <span className="ml-auto flex items-center gap-1 group-data-[collapsible=icon]:hidden">
@@ -65,17 +65,17 @@ function RunningBadge({ count }: { count: number }) {
         <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
       </span>
       <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400">
-        {count} running
+        {count} {t('nav.running')}
       </span>
     </span>
   )
 }
 
-function SystemStatusIndicator({ status }: { status: 'online' | 'degraded' | 'offline' }) {
+function SystemStatusIndicator({ status, t }: { status: 'online' | 'degraded' | 'offline'; t: (key: string) => string }) {
   const config = {
-    online: { color: 'bg-emerald-500', ring: 'bg-emerald-400', text: 'Online', textColor: 'text-emerald-600 dark:text-emerald-400' },
-    degraded: { color: 'bg-yellow-500', ring: 'bg-yellow-400', text: 'Degraded', textColor: 'text-yellow-600 dark:text-yellow-400' },
-    offline: { color: 'bg-red-500', ring: 'bg-red-400', text: 'Offline', textColor: 'text-red-600 dark:text-red-400' },
+    online: { color: 'bg-emerald-500', ring: 'bg-emerald-400', text: t('nav.statusOnline'), textColor: 'text-emerald-600 dark:text-emerald-400' },
+    degraded: { color: 'bg-yellow-500', ring: 'bg-yellow-400', text: t('nav.statusDegraded'), textColor: 'text-yellow-600 dark:text-yellow-400' },
+    offline: { color: 'bg-red-500', ring: 'bg-red-400', text: t('nav.statusOffline'), textColor: 'text-red-600 dark:text-red-400' },
   }[status]
 
   return (
@@ -127,10 +127,11 @@ export function AppSidebar() {
     shortcut: string
     stat?: React.ReactNode
   }[] = [
+    { key: 'landing', label: t('nav.landing'), icon: Rocket, shortcut: '⌘0' },
     { key: 'dashboard', label: t('nav.dashboard'), icon: LayoutDashboard, shortcut: '⌘1', stat: <HealthDot healthy={isHealthy} /> },
     { key: 'models', label: t('nav.models'), icon: Box, shortcut: '⌘2', stat: <MiniBadge count={modelCount} /> },
     { key: 'parameters', label: t('nav.parameters'), icon: SlidersHorizontal, shortcut: '⌘3' },
-    { key: 'benchmark', label: t('nav.benchmark'), icon: Play, shortcut: '⌘4', stat: <RunningBadge count={runningBenchmarks} /> },
+    { key: 'benchmark', label: t('nav.benchmark'), icon: Play, shortcut: '⌘4', stat: <RunningBadge count={runningBenchmarks} t={t} /> },
     { key: 'reports', label: t('nav.reports'), icon: BarChart3, shortcut: '⌘5', stat: <MiniBadge count={resultCount} variant="amber" /> },
     { key: 'analysis', label: t('nav.analysis'), icon: TrendingUp, shortcut: '⌘6', stat: <MiniBadge count={analysisCount} /> },
     { key: 'settings', label: t('nav.settings'), icon: Settings, shortcut: '⌘7' },
@@ -147,14 +148,14 @@ export function AppSidebar() {
             <Cpu className="h-5 w-5" />
           </div>
           <div className="flex items-center gap-2 group-data-[collapsible=icon]:hidden">
-            <span className="text-base font-bold tracking-tight">InferBench</span>
+            <span className="text-base font-bold tracking-tight">{t('nav.brandName')}</span>
             <span className="inline-flex items-center rounded-md bg-gradient-to-r from-emerald-600 to-emerald-500 px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none text-white shadow-sm">
-              Pro
+              {t('nav.pro')}
             </span>
           </div>
         </div>
         <div className="group-data-[collapsible=icon]:hidden mt-1">
-          <span className="text-[11px] text-muted-foreground leading-none">Inference Engine Platform</span>
+          <span className="text-[11px] text-muted-foreground leading-none">{t('nav.inferenceEnginePlatform')}</span>
         </div>
       </SidebarHeader>
 
@@ -243,7 +244,7 @@ export function AppSidebar() {
         {/* Animated gradient line at the bottom */}
         <div className="absolute bottom-0 left-0 right-0 h-[2px] animate-gradient-line" />
         <div className="flex items-center gap-2 px-2 group-data-[collapsible=icon]:justify-center">
-          <SystemStatusIndicator status={systemStatus} />
+          <SystemStatusIndicator status={systemStatus} t={t} />
           <span className="text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
             · v1.0.0 · {t('nav.inferenceEnginePlatform')}
           </span>

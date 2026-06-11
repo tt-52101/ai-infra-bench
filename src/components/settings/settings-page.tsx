@@ -251,12 +251,12 @@ export function SettingsPage() {
       clearTimeout(timeout)
       // no-cors mode returns opaque response, so we just check it didn't throw
       setStatus('connected')
-      toast.success(`Connection successful: ${endpoint}`)
+      toast.success(t('settings.connectionSuccess', { status: endpoint }))
     } catch {
       setStatus('failed')
-      toast.error(`Connection failed: ${endpoint}`)
+      toast.error(t('settings.connectionFailed', { error: endpoint }))
     }
-  }, [settings.apiConfig.apiTimeout])
+  }, [settings.apiConfig.apiTimeout, t])
 
   // ── Data Management ─────────────────────────────────────────────────────
 
@@ -285,11 +285,11 @@ export function SettingsPage() {
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
-      toast.success('Data exported successfully')
+      toast.success(t('settings.dataExported'))
     } catch {
-      toast.error('Failed to export data')
+      toast.error(t('settings.dataExportFailed'))
     }
-  }, [settings])
+  }, [settings, t])
 
   const handleImportData = useCallback(() => {
     const input = document.createElement('input')
@@ -311,32 +311,32 @@ export function SettingsPage() {
           }
           setSettings(newSettings)
           saveSettings(newSettings)
-          toast.success('Data imported successfully')
+          toast.success(t('settings.dataImported'))
         } else {
-          toast.error('Invalid import file: no settings found')
+          toast.error(t('settings.invalidImportFile'))
         }
       } catch {
-        toast.error('Failed to parse import file')
+        toast.error(t('settings.importParseFailed'))
       }
     }
     input.click()
-  }, [])
+  }, [t])
 
   const handleClearBenchmarkResults = useCallback(() => {
     try {
       // Clear benchmark-related localStorage keys if any
       localStorage.removeItem('inferbench-benchmark-results')
-      toast.success('All benchmark results cleared')
+      toast.success(t('settings.resultsCleared'))
     } catch {
-      toast.error('Failed to clear benchmark results')
+      toast.error(t('settings.clearResultsFailed'))
     }
-  }, [])
+  }, [t])
 
   const handleResetToDefaults = useCallback(() => {
     setSettings(DEFAULT_SETTINGS)
     saveSettings(DEFAULT_SETTINGS)
-    toast.success('Settings reset to defaults')
-  }, [])
+    toast.success(t('settings.settingsReset'))
+  }, [t])
 
   // ── Connection Status Icon ──────────────────────────────────────────────
 
@@ -385,14 +385,14 @@ export function SettingsPage() {
             <CardHeader>
               <div className="flex items-center gap-2">
                 <Settings className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                <CardTitle className="text-base">General Settings</CardTitle>
+                <CardTitle className="text-base">{t('settings.general')}</CardTitle>
               </div>
-              <CardDescription>Basic platform configuration options</CardDescription>
+              <CardDescription>{t('settings.generalDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
               {/* Platform Name */}
               <div className="space-y-2">
-                <Label htmlFor="platform-name">Platform Name</Label>
+                <Label htmlFor="platform-name">{t('settings.platformName')}</Label>
                 <Input
                   id="platform-name"
                   value={settings.general.platformName}
@@ -403,7 +403,7 @@ export function SettingsPage() {
 
               {/* Default Engine */}
               <div className="space-y-2">
-                <Label>Default Engine</Label>
+                <Label>{t('settings.defaultEngine')}</Label>
                 <Select
                   value={settings.general.defaultEngine}
                   onValueChange={(v) => updateSection('general', { defaultEngine: v as GeneralSettings['defaultEngine'] })}
@@ -422,7 +422,7 @@ export function SettingsPage() {
               {/* Default Benchmark Duration */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label>Default Benchmark Duration</Label>
+                  <Label>{t('settings.defaultBenchmarkDuration')}</Label>
                   <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
                     {settings.general.defaultBenchmarkDuration}s
                   </span>
@@ -444,8 +444,8 @@ export function SettingsPage() {
               {/* Auto-refresh Data */}
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label>Auto-refresh Data</Label>
-                  <p className="text-xs text-muted-foreground">Automatically refresh data from the server</p>
+                  <Label>{t('settings.autoRefreshData')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('settings.autoRefreshDataDesc')}</p>
                 </div>
                 <Switch
                   checked={settings.general.autoRefreshData}
@@ -456,7 +456,7 @@ export function SettingsPage() {
               {/* Refresh Interval */}
               {settings.general.autoRefreshData && (
                 <div className="space-y-2">
-                  <Label>Refresh Interval</Label>
+                  <Label>{t('settings.refreshInterval')}</Label>
                   <Select
                     value={String(settings.general.refreshInterval)}
                     onValueChange={(v) => updateSection('general', { refreshInterval: Number(v) })}
@@ -483,14 +483,14 @@ export function SettingsPage() {
             <CardHeader>
               <div className="flex items-center gap-2">
                 <Palette className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                <CardTitle className="text-base">Appearance</CardTitle>
+                <CardTitle className="text-base">{t('settings.appearance')}</CardTitle>
               </div>
-              <CardDescription>Customize the look and feel of the platform</CardDescription>
+              <CardDescription>{t('settings.appearanceDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
               {/* Theme */}
               <div className="space-y-2">
-                <Label>Theme</Label>
+                <Label>{t('settings.theme')}</Label>
                 <Select
                   value={settings.appearance.theme}
                   onValueChange={(v) => updateSection('appearance', { theme: v as AppearanceSettings['theme'] })}
@@ -509,8 +509,8 @@ export function SettingsPage() {
               {/* Compact Mode */}
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label>Compact Mode</Label>
-                  <p className="text-xs text-muted-foreground">Reduce padding and margins for denser layouts</p>
+                  <Label>{t('settings.compactMode')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('settings.compactModeDesc')}</p>
                 </div>
                 <Switch
                   checked={settings.appearance.compactMode}
@@ -521,8 +521,8 @@ export function SettingsPage() {
               {/* Show Keyboard Shortcuts */}
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label>Show Keyboard Shortcuts</Label>
-                  <p className="text-xs text-muted-foreground">Display keyboard shortcuts in the sidebar and menus</p>
+                  <Label>{t('settings.showKeyboardShortcuts')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('settings.showKeyboardShortcutsDesc')}</p>
                 </div>
                 <Switch
                   checked={settings.appearance.showKeyboardShortcuts}
@@ -532,7 +532,7 @@ export function SettingsPage() {
 
               {/* Animation Speed */}
               <div className="space-y-2">
-                <Label>Animation Speed</Label>
+                <Label>{t('settings.animationSpeed')}</Label>
                 <Select
                   value={settings.appearance.animationSpeed}
                   onValueChange={(v) => updateSection('appearance', { animationSpeed: v as AppearanceSettings['animationSpeed'] })}
@@ -558,14 +558,14 @@ export function SettingsPage() {
             <CardHeader>
               <div className="flex items-center gap-2">
                 <Gauge className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                <CardTitle className="text-base">Benchmark Defaults</CardTitle>
+                <CardTitle className="text-base">{t('settings.benchmarkDefaults')}</CardTitle>
               </div>
-              <CardDescription>Default parameters for new benchmark tests</CardDescription>
+              <CardDescription>{t('settings.benchmarkDefaultsDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
               {/* Default Scenario */}
               <div className="space-y-2">
-                <Label>Default Scenario</Label>
+                <Label>{t('settings.defaultScenario')}</Label>
                 <Select
                   value={settings.benchmarkDefaults.defaultScenario}
                   onValueChange={(v) => updateSection('benchmarkDefaults', { defaultScenario: v as BenchmarkDefaults['defaultScenario'] })}
@@ -586,7 +586,7 @@ export function SettingsPage() {
               {/* Default Concurrency */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label>Default Concurrency</Label>
+                  <Label>{t('settings.defaultConcurrency')}</Label>
                   <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
                     {settings.benchmarkDefaults.defaultConcurrency}
                   </span>
@@ -607,7 +607,7 @@ export function SettingsPage() {
 
               {/* Default Num Requests */}
               <div className="space-y-2">
-                <Label htmlFor="default-num-requests">Default Number of Requests</Label>
+                <Label htmlFor="default-num-requests">{t('settings.defaultNumRequests')}</Label>
                 <Input
                   id="default-num-requests"
                   type="number"
@@ -625,7 +625,7 @@ export function SettingsPage() {
               {/* Default Input Token Length */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label>Default Input Token Length</Label>
+                  <Label>{t('settings.defaultInputTokenLength')}</Label>
                   <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
                     {settings.benchmarkDefaults.defaultInputTokenLength}
                   </span>
@@ -647,7 +647,7 @@ export function SettingsPage() {
               {/* Default Output Token Length */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label>Default Output Token Length</Label>
+                  <Label>{t('settings.defaultOutputTokenLength')}</Label>
                   <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
                     {settings.benchmarkDefaults.defaultOutputTokenLength}
                   </span>
@@ -671,8 +671,8 @@ export function SettingsPage() {
               {/* Auto-save Results */}
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label>Auto-save Results</Label>
-                  <p className="text-xs text-muted-foreground">Automatically save benchmark results when completed</p>
+                  <Label>{t('settings.autoSaveResults')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('settings.autoSaveResultsDesc')}</p>
                 </div>
                 <Switch
                   checked={settings.benchmarkDefaults.autoSaveResults}
@@ -683,8 +683,8 @@ export function SettingsPage() {
               {/* Show Live Progress */}
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label>Show Live Progress</Label>
-                  <p className="text-xs text-muted-foreground">Display real-time progress during benchmark execution</p>
+                  <Label>{t('settings.showLiveProgress')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('settings.showLiveProgressDesc')}</p>
                 </div>
                 <Switch
                   checked={settings.benchmarkDefaults.showLiveProgress}
@@ -701,16 +701,16 @@ export function SettingsPage() {
             <CardHeader>
               <div className="flex items-center gap-2">
                 <Bell className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                <CardTitle className="text-base">Notifications</CardTitle>
+                <CardTitle className="text-base">{t('settings.notifications')}</CardTitle>
               </div>
-              <CardDescription>Control when and how you receive notifications</CardDescription>
+              <CardDescription>{t('settings.notificationsDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
               {/* Enable Notifications */}
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label>Enable Notifications</Label>
-                  <p className="text-xs text-muted-foreground">Master toggle for all notifications</p>
+                  <Label>{t('settings.enableNotifications')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('settings.enableNotificationsDesc')}</p>
                 </div>
                 <Switch
                   checked={settings.notifications.enableNotifications}
@@ -723,7 +723,7 @@ export function SettingsPage() {
               {/* Sub-notifications (disabled when master is off) */}
               <div className={`space-y-4 ${!settings.notifications.enableNotifications ? 'opacity-50 pointer-events-none' : ''}`}>
                 <div className="flex items-center justify-between">
-                  <Label>Benchmark Complete</Label>
+                  <Label>{t('settings.notifyBenchmarkComplete')}</Label>
                   <Switch
                     checked={settings.notifications.notifyBenchmarkComplete}
                     onCheckedChange={(v) => updateSection('notifications', { notifyBenchmarkComplete: v })}
@@ -731,7 +731,7 @@ export function SettingsPage() {
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <Label>Benchmark Failed</Label>
+                  <Label>{t('settings.notifyBenchmarkFailed')}</Label>
                   <Switch
                     checked={settings.notifications.notifyBenchmarkFailed}
                     onCheckedChange={(v) => updateSection('notifications', { notifyBenchmarkFailed: v })}
@@ -739,7 +739,7 @@ export function SettingsPage() {
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <Label>System Alerts</Label>
+                  <Label>{t('settings.notifySystemAlerts')}</Label>
                   <Switch
                     checked={settings.notifications.notifySystemAlerts}
                     onCheckedChange={(v) => updateSection('notifications', { notifySystemAlerts: v })}
@@ -747,7 +747,7 @@ export function SettingsPage() {
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <Label>Model Deployed</Label>
+                  <Label>{t('settings.notifyModelDeployed')}</Label>
                   <Switch
                     checked={settings.notifications.notifyModelDeployed}
                     onCheckedChange={(v) => updateSection('notifications', { notifyModelDeployed: v })}
@@ -760,8 +760,8 @@ export function SettingsPage() {
               {/* Sound Effects */}
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label>Sound Effects</Label>
-                  <p className="text-xs text-muted-foreground">Play sounds for notifications</p>
+                  <Label>{t('settings.soundEffects')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('settings.soundEffectsDesc')}</p>
                 </div>
                 <Switch
                   checked={settings.notifications.soundEffects}
@@ -778,20 +778,20 @@ export function SettingsPage() {
             <CardHeader>
               <div className="flex items-center gap-2">
                 <Database className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                <CardTitle className="text-base">Data Management</CardTitle>
+                <CardTitle className="text-base">{t('settings.dataManagement')}</CardTitle>
               </div>
-              <CardDescription>Import, export, and manage your platform data</CardDescription>
+              <CardDescription>{t('settings.dataManagementDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Export All Data */}
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label>Export All Data</Label>
-                  <p className="text-xs text-muted-foreground">Download all settings and data as JSON</p>
+                  <Label>{t('settings.exportAllData')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('settings.exportAllDataDesc')}</p>
                 </div>
                 <Button variant="outline" size="sm" onClick={handleExportAllData}>
                   <Download className="h-4 w-4 mr-2" />
-                  Export
+                  {t('common.export')}
                 </Button>
               </div>
 
@@ -800,12 +800,12 @@ export function SettingsPage() {
               {/* Import Data */}
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label>Import Data</Label>
-                  <p className="text-xs text-muted-foreground">Load settings from a JSON file</p>
+                  <Label>{t('settings.importData')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('settings.importDataDesc')}</p>
                 </div>
                 <Button variant="outline" size="sm" onClick={handleImportData}>
                   <Upload className="h-4 w-4 mr-2" />
-                  Import
+                  {t('common.import')}
                 </Button>
               </div>
 
@@ -814,30 +814,30 @@ export function SettingsPage() {
               {/* Clear All Benchmark Results */}
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label>Clear All Benchmark Results</Label>
-                  <p className="text-xs text-muted-foreground">Permanently delete all benchmark results</p>
+                  <Label>{t('settings.clearBenchmarkResults')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('settings.clearBenchmarkResultsDesc')}</p>
                 </div>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30">
                       <Trash2 className="h-4 w-4 mr-2" />
-                      Clear
+                      {t('common.delete')}
                     </Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
-                      <AlertDialogTitle>Clear All Benchmark Results?</AlertDialogTitle>
+                      <AlertDialogTitle>{t('settings.clearResultsConfirm')}</AlertDialogTitle>
                       <AlertDialogDescription>
-                        This action cannot be undone. All benchmark results will be permanently deleted from local storage.
+                        {t('settings.clearResultsWarning')}
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                       <AlertDialogAction
                         onClick={handleClearBenchmarkResults}
                         className="bg-red-600 hover:bg-red-700 text-white"
                       >
-                        Clear Results
+                        {t('settings.clearResults')}
                       </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
@@ -849,30 +849,30 @@ export function SettingsPage() {
               {/* Reset to Defaults */}
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label>Reset to Defaults</Label>
-                  <p className="text-xs text-muted-foreground">Restore all settings to their default values</p>
+                  <Label>{t('settings.resetToDefaults')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('settings.resetToDefaultsDesc')}</p>
                 </div>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <Button variant="outline" size="sm" className="text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30">
                       <RotateCcw className="h-4 w-4 mr-2" />
-                      Reset
+                      {t('common.reset')}
                     </Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
-                      <AlertDialogTitle>Reset All Settings?</AlertDialogTitle>
+                      <AlertDialogTitle>{t('settings.resetConfirm')}</AlertDialogTitle>
                       <AlertDialogDescription>
-                        This will restore all settings to their default values. Your current configuration will be lost.
+                        {t('settings.resetWarning')}
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                       <AlertDialogAction
                         onClick={handleResetToDefaults}
                         className="bg-amber-600 hover:bg-amber-700 text-white"
                       >
-                        Reset to Defaults
+                        {t('settings.resetToDefaults')}
                       </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
@@ -888,16 +888,16 @@ export function SettingsPage() {
             <CardHeader>
               <div className="flex items-center gap-2">
                 <Globe className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                <CardTitle className="text-base">API Configuration</CardTitle>
+                <CardTitle className="text-base">{t('settings.apiConfig')}</CardTitle>
               </div>
-              <CardDescription>Configure inference engine API endpoints</CardDescription>
+              <CardDescription>{t('settings.apiConfigDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
               {/* VLLM API Endpoint */}
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <Server className="h-3.5 w-3.5 text-emerald-500" />
-                  <Label htmlFor="vllm-endpoint">VLLM API Endpoint</Label>
+                  <Label htmlFor="vllm-endpoint">{t('settings.vllmEndpoint')}</Label>
                 </div>
                 <div className="flex items-center gap-2">
                   <Input
@@ -931,7 +931,7 @@ export function SettingsPage() {
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <Server className="h-3.5 w-3.5 text-amber-500" />
-                  <Label htmlFor="sglang-endpoint">SGLang API Endpoint</Label>
+                  <Label htmlFor="sglang-endpoint">{t('settings.sglangEndpoint')}</Label>
                 </div>
                 <div className="flex items-center gap-2">
                   <Input
@@ -963,7 +963,7 @@ export function SettingsPage() {
 
               {/* WebSocket Endpoint */}
               <div className="space-y-2">
-                <Label htmlFor="ws-endpoint">WebSocket Endpoint</Label>
+                <Label htmlFor="ws-endpoint">{t('settings.wsEndpoint')}</Label>
                 <div className="flex items-center gap-2">
                   <Input
                     id="ws-endpoint"
@@ -1022,7 +1022,7 @@ export function SettingsPage() {
               {/* API Timeout */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label>API Timeout</Label>
+                  <Label>{t('settings.apiTimeout')}</Label>
                   <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
                     {settings.apiConfig.apiTimeout}s
                   </span>
