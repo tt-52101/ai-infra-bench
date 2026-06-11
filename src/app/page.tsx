@@ -15,6 +15,8 @@ import BenchmarkPage from '@/components/benchmark/benchmark-page'
 import ReportsPage from '@/components/reports/reports-page'
 import AnalysisPage from '@/components/analysis/analysis-page'
 import { SettingsPage } from '@/components/settings/settings-page'
+import { ApiDocsPage } from '@/components/api-docs/api-docs-page'
+import { AuthPage } from '@/components/auth/auth-page'
 import { AppSidebar } from '@/components/app-sidebar'
 import { CommandPalette } from '@/components/command-palette'
 import { NotificationCenter } from '@/components/notification-center'
@@ -45,6 +47,8 @@ function usePageTitles() {
     reports: t('page.reports'),
     analysis: t('page.analysis'),
     settings: t('page.settings'),
+    apiDocs: t('page.apiDocs'),
+    auth: t('page.auth'),
   } as Record<PageKey, string>
 }
 
@@ -66,6 +70,10 @@ function PageContent({ page }: { page: PageKey }) {
       return <AnalysisPage />
     case 'settings':
       return <SettingsPage />
+    case 'apiDocs':
+      return <ApiDocsPage />
+    case 'auth':
+      return <AuthPage />
     default:
       return <DashboardPage />
   }
@@ -110,6 +118,7 @@ function HomeContent() {
       '5': 'reports',
       '6': 'analysis',
       '7': 'settings',
+      '8': 'apiDocs',
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {

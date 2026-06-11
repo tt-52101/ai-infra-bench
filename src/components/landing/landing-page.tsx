@@ -20,6 +20,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import { useI18n } from '@/hooks/use-i18n'
+import { useAppStore } from '@/lib/store'
 
 // ── Animation Helpers ──
 
@@ -72,24 +73,6 @@ const benchmarkData = [
   { model: 'Qwen2-72B', engine: 'SGLang', scenario: 'Multi-Stream', throughput: 265.4, firstTokenLatency: 135, p95Latency: 375, errorRate: 0.10 },
   { model: 'Mixtral-8x7B', engine: 'vLLM', scenario: 'Burst', throughput: 425.6, firstTokenLatency: 95, p95Latency: 268, errorRate: 0.22 },
   { model: 'Mixtral-8x7B', engine: 'SGLang', scenario: 'Burst', throughput: 412.8, firstTokenLatency: 88, p95Latency: 255, errorRate: 0.18 },
-]
-
-const tuningParams = [
-  { name: 'max_model_len', value: '8192', desc: 'Maximum model sequence length' },
-  { name: 'gpu_memory_utilization', value: '0.90', desc: 'GPU memory utilization ratio' },
-  { name: 'tensor_parallel_size', value: '4', desc: 'Number of GPUs for tensor parallelism' },
-  { name: 'max_num_seqs', value: '256', desc: 'Maximum number of sequences per iteration' },
-  { name: 'max_num_batched_tokens', value: '8192', desc: 'Maximum tokens per batch' },
-  { name: 'enable_prefix_caching', value: 'true', desc: 'Enable KV cache prefix reuse' },
-  { name: 'enable_chunked_prefill', value: 'true', desc: 'Enable chunked prefill optimization' },
-  { name: 'swap_space', value: '4 (GB)', desc: 'CPU swap space size per GPU' },
-]
-
-const resourceData = [
-  { label: 'landing.resource.gpuUtil', value: 82, color: '#10b981' },
-  { label: 'landing.resource.vramUsage', value: 78, color: '#f59e0b' },
-  { label: 'landing.resource.cpuUtil', value: 36, color: '#6366f1' },
-  { label: 'landing.resource.memoryUsage', value: 33, color: '#ec4899' },
 ]
 
 // ── Circular Progress Component ──
@@ -153,6 +136,25 @@ function Section({ id, children, className = '' }: {
 
 export function LandingPage() {
   const { t } = useI18n()
+  const { setActivePage } = useAppStore()
+
+  const tuningParams = [
+    { name: 'max_model_len', value: '8192', desc: t('landing.tuning.maxModelLenDesc') },
+    { name: 'gpu_memory_utilization', value: '0.90', desc: t('landing.tuning.gpuMemoryUtilDesc') },
+    { name: 'tensor_parallel_size', value: '4', desc: t('landing.tuning.tensorParallelDesc') },
+    { name: 'max_num_seqs', value: '256', desc: t('landing.tuning.maxNumSeqsDesc') },
+    { name: 'max_num_batched_tokens', value: '8192', desc: t('landing.tuning.maxNumBatchedTokensDesc') },
+    { name: 'enable_prefix_caching', value: 'true', desc: t('landing.tuning.enablePrefixCachingDesc') },
+    { name: 'enable_chunked_prefill', value: 'true', desc: t('landing.tuning.enableChunkedPrefillDesc') },
+    { name: 'swap_space', value: '4 (GB)', desc: t('landing.tuning.swapSpaceDesc') },
+  ]
+
+  const resourceData = [
+    { label: t('landing.resource.gpuUtil'), value: 82, color: '#10b981' },
+    { label: t('landing.resource.vramUsage'), value: 78, color: '#f59e0b' },
+    { label: t('landing.resource.cpuUtil'), value: 36, color: '#6366f1' },
+    { label: t('landing.resource.memoryUsage'), value: 33, color: '#ec4899' },
+  ]
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -167,7 +169,7 @@ export function LandingPage() {
           <motion.div {...fadeInUp}>
             <Badge variant="secondary" className="mb-6 px-4 py-1.5 text-sm bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
               <Zap className="h-3.5 w-3.5 mr-1.5" />
-              Open Source · Apache-2.0
+              {t('landing.footer.openSource')} · Apache-2.0
             </Badge>
           </motion.div>
 
@@ -206,11 +208,11 @@ export function LandingPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.45, ease: 'easeOut' }}
           >
-            <Button size="lg" className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 h-12 text-base shadow-lg shadow-emerald-500/25">
+            <Button size="lg" className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 h-12 text-base shadow-lg shadow-emerald-500/25" onClick={() => setActivePage('dashboard')}>
               {t('landing.hero.getStarted')}
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
-            <Button size="lg" variant="outline" className="px-8 h-12 text-base border-emerald-500/30 hover:bg-emerald-500/5">
+            <Button size="lg" variant="outline" className="px-8 h-12 text-base border-emerald-500/30 hover:bg-emerald-500/5" onClick={() => setActivePage('benchmark')}>
               <Eye className="mr-2 h-4 w-4" />
               {t('landing.hero.viewDemo')}
             </Button>
@@ -224,10 +226,10 @@ export function LandingPage() {
             transition={{ duration: 0.7, delay: 0.6, ease: 'easeOut' }}
           >
             {[
-              { label: 'GitHub Stars', value: '2.8k+' },
-              { label: 'Active Users', value: '1.2k+' },
-              { label: 'Benchmarks Run', value: '50k+' },
-              { label: 'Models Supported', value: '100+' },
+              { label: t('landing.hero.githubStars'), value: '2.8k+' },
+              { label: t('landing.hero.activeUsers'), value: '1.2k+' },
+              { label: t('landing.hero.benchmarksRun'), value: '50k+' },
+              { label: t('landing.hero.modelsSupported'), value: '100+' },
             ].map((stat) => (
               <div key={stat.label} className="text-center">
                 <div className="text-2xl md:text-3xl font-bold text-foreground">{stat.value}</div>
@@ -392,7 +394,7 @@ export function LandingPage() {
                         <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{t('landing.architecture.vllmEngine')}</span>
                       </div>
                       <div className="flex flex-wrap gap-1.5">
-                        {['PagedAttention', 'Continuous Batching', 'KV Cache Reuse', 'Tensor/Pipeline Parallel'].map((tech) => (
+                        {[t('landing.architecture.pagedAttention'), t('landing.architecture.continuousBatching'), t('landing.architecture.kvCacheReuse'), t('landing.architecture.tensorPipelineParallel')].map((tech) => (
                           <Badge key={tech} variant="secondary" className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
                             {tech}
                           </Badge>
@@ -406,7 +408,7 @@ export function LandingPage() {
                         <span className="text-sm font-bold text-amber-600 dark:text-amber-400">{t('landing.architecture.sglangEngine')}</span>
                       </div>
                       <div className="flex flex-wrap gap-1.5">
-                        {['RadixAttention', 'Jump Forward', 'Auto Parallelism', 'Efficient Scheduling'].map((tech) => (
+                        {[t('landing.architecture.radixAttention'), t('landing.architecture.jumpForward'), t('landing.architecture.autoParallelism'), t('landing.architecture.efficientScheduling')].map((tech) => (
                           <Badge key={tech} variant="secondary" className="text-[10px] bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20">
                             {tech}
                           </Badge>
@@ -509,7 +511,7 @@ export function LandingPage() {
               <Button variant="outline" size="sm" className="border-emerald-500/30">
                 {t('landing.tuning.saveConfig')}
               </Button>
-              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white">
+              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => setActivePage('parameters')}>
                 <Rocket className="mr-2 h-3.5 w-3.5" />
                 {t('landing.tuning.applyAndRun')}
               </Button>
@@ -648,8 +650,8 @@ export function LandingPage() {
           >
             <Card className="border-border/50">
               <CardHeader className="pb-2">
-                <CardTitle className="text-base">Latency Trend</CardTitle>
-                <CardDescription className="text-xs">Latency vs Concurrency Level</CardDescription>
+                <CardTitle className="text-base">{t('landing.perf.latencyTrend')}</CardTitle>
+                <CardDescription className="text-xs">{t('landing.perf.latencyVsConcurrency')}</CardDescription>
               </CardHeader>
               <CardContent className="pt-0">
                 <div className="h-[280px] w-full">
@@ -701,7 +703,7 @@ export function LandingPage() {
             >
               <Card className="border-border/50 h-full">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Throughput vs Concurrency</CardTitle>
+                  <CardTitle className="text-base">{t('landing.inflection.throughputVsConcurrency')}</CardTitle>
                 </CardHeader>
                 <CardContent className="pt-0">
                   <div className="h-[300px] w-full">
@@ -756,7 +758,7 @@ export function LandingPage() {
                     <span className="text-sm font-semibold text-red-600 dark:text-red-400">{t('landing.inflection.inflectionAt')}</span>
                   </div>
                   <p className="text-3xl font-extrabold text-red-600 dark:text-red-400">40</p>
-                  <p className="text-xs text-muted-foreground mt-1">concurrency level</p>
+                  <p className="text-xs text-muted-foreground mt-1">{t('landing.inflection.concurrencyLevel')}</p>
                 </CardContent>
               </Card>
 
@@ -878,7 +880,7 @@ export function LandingPage() {
                 <Card className="border-border/50 hover:shadow-lg transition-shadow p-2">
                   <CardContent className="p-4 flex flex-col items-center">
                     <CircularProgress value={item.value} color={item.color} size={110} strokeWidth={9} />
-                    <p className="text-sm font-semibold mt-3">{t(item.label)}</p>
+                    <p className="text-sm font-semibold mt-3">{item.label}</p>
                   </CardContent>
                 </Card>
               </motion.div>

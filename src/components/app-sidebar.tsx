@@ -1,6 +1,6 @@
 'use client'
 
-import { Cpu, LayoutDashboard, Rocket, Box, SlidersHorizontal, Play, BarChart3, TrendingUp, Settings, Globe, Wifi, WifiOff, AlertTriangle } from 'lucide-react'
+import { Cpu, LayoutDashboard, Rocket, Box, SlidersHorizontal, Play, BarChart3, TrendingUp, Settings, Globe, Wifi, WifiOff, AlertTriangle, Code2, LogIn } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '@/lib/store'
@@ -135,6 +135,7 @@ export function AppSidebar() {
     { key: 'reports', label: t('nav.reports'), icon: BarChart3, shortcut: '⌘5', stat: <MiniBadge count={resultCount} variant="amber" /> },
     { key: 'analysis', label: t('nav.analysis'), icon: TrendingUp, shortcut: '⌘6', stat: <MiniBadge count={analysisCount} /> },
     { key: 'settings', label: t('nav.settings'), icon: Settings, shortcut: '⌘7' },
+    { key: 'apiDocs', label: t('nav.apiDocs'), icon: Code2, shortcut: '⌘8' },
   ]
 
   return (
@@ -240,7 +241,34 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="px-4 pb-4 border-t border-border/40 pt-3 relative">
+      <SidebarFooter className="px-4 pb-4 border-t border-border/40 pt-3 relative space-y-2">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <TooltipProvider delayDuration={500}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <SidebarMenuButton
+                    isActive={activePage === 'auth'}
+                    onClick={() => setActivePage('auth')}
+                    className={cn(
+                      'relative h-10 px-3 rounded-lg transition-all duration-300 ease-out will-change-transform',
+                      'hover:scale-[1.02] active:scale-[0.98]',
+                      activePage === 'auth'
+                        ? 'bg-emerald-600/10 text-emerald-700 dark:text-emerald-400 font-semibold shadow-sm shadow-emerald-500/10 scale-[1.02]'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                    )}
+                  >
+                    <LogIn className="h-[18px] w-[18px]" />
+                    <span className="group-data-[collapsible=icon]:hidden">{t('nav.auth')}</span>
+                  </SidebarMenuButton>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="text-xs">
+                  {t('nav.auth')}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </SidebarMenuItem>
+        </SidebarMenu>
         {/* Animated gradient line at the bottom */}
         <div className="absolute bottom-0 left-0 right-0 h-[2px] animate-gradient-line" />
         <div className="flex items-center gap-2 px-2 group-data-[collapsible=icon]:justify-center">
