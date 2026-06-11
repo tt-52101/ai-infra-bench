@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react'
-import { Box, Play, Zap, Clock, ArrowRight, Plus, SlidersHorizontal, Server, HardDrive, Wifi, XCircle, Award, ArrowUpRight, ArrowDownRight, Thermometer, Cpu, Check, BarChart3, AlertTriangle, ChevronDown, ChevronUp, Trophy, Crown, TrendingUp } from 'lucide-react'
+import { Box, Play, Zap, Clock, ArrowRight, Plus, SlidersHorizontal, Server, HardDrive, Wifi, XCircle, Award, ArrowUpRight, ArrowDownRight, Thermometer, Cpu, Check, BarChart3, AlertTriangle, ChevronDown, ChevronUp, Trophy, Crown, TrendingUp, FileBarChart } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -192,7 +192,7 @@ const ACTIVITY_TYPE_CONFIG: Record<ActivityType, {
     bgColor: 'bg-emerald-100 dark:bg-emerald-900/40',
     borderColor: 'border-l-emerald-500',
     dotColor: 'bg-emerald-500',
-    label: 'Completed',
+    label: 'Completed', // i18n: displayed in activity badge, uses type key for lookup
     category: 'benchmark',
   },
   benchmark_started: {
@@ -201,7 +201,7 @@ const ACTIVITY_TYPE_CONFIG: Record<ActivityType, {
     bgColor: 'bg-amber-100 dark:bg-amber-900/40',
     borderColor: 'border-l-amber-500',
     dotColor: 'bg-amber-500',
-    label: 'Started',
+    label: 'Started', // i18n: displayed in activity badge, uses type key for lookup
     category: 'benchmark',
   },
   benchmark_failed: {
@@ -210,7 +210,7 @@ const ACTIVITY_TYPE_CONFIG: Record<ActivityType, {
     bgColor: 'bg-red-100 dark:bg-red-900/40',
     borderColor: 'border-l-red-500',
     dotColor: 'bg-red-500',
-    label: 'Failed',
+    label: 'Failed', // i18n: displayed in activity badge, uses type key for lookup
     category: 'benchmark',
   },
   model_added: {
@@ -260,145 +260,103 @@ const ACTIVITY_TYPE_CONFIG: Record<ActivityType, {
   },
 }
 
-function generateInitialActivities(): TimelineActivity[] {
+function generateActivitiesFromData(
+  benchmarks: BenchmarkTaskInfo[],
+  models: { id: string; name: string; engine: string }[],
+): TimelineActivity[] {
   const now = new Date()
-  const activities: TimelineActivity[] = [
-    {
-      id: 'act-1',
-      type: 'benchmark_completed',
-      title: 'Qwen2.5-72B Multi-Stream completed',
-      description: 'Throughput: 4,218 tokens/s, Latency P99: 142ms',
-      timestamp: new Date(now.getTime() - 5 * 60 * 1000),
-      relatedModel: 'Qwen2.5-72B',
-      relatedEngine: 'sglang',
-    },
-    {
-      id: 'act-2',
-      type: 'model_deployed',
-      title: 'LLaMA-3.1-70B deployed to cluster',
-      description: 'Deployed on GPU Node 2 with VLLM engine',
-      timestamp: new Date(now.getTime() - 23 * 60 * 1000),
-      relatedModel: 'LLaMA-3.1-70B',
-      relatedEngine: 'vllm',
-    },
-    {
-      id: 'act-3',
-      type: 'benchmark_started',
-      title: 'DeepSeek-V3 Burst test started',
-      description: 'Concurrency: 64, Duration: 30s',
-      timestamp: new Date(now.getTime() - 45 * 60 * 1000),
-      relatedModel: 'DeepSeek-V3-671B',
-      relatedEngine: 'vllm',
-    },
-    {
-      id: 'act-4',
-      type: 'profile_created',
-      title: 'Profile "High Throughput" created',
-      description: 'Max sequences: 256, GPU mem util: 0.92',
-      timestamp: new Date(now.getTime() - 1.2 * 60 * 60 * 1000),
-      relatedModel: 'Qwen2.5-72B',
-      relatedEngine: 'sglang',
-    },
-    {
-      id: 'act-5',
-      type: 'analysis_ready',
-      title: 'Concurrency vs Throughput analysis ready',
-      description: 'Inflection point detected at concurrency=48',
-      timestamp: new Date(now.getTime() - 1.8 * 60 * 60 * 1000),
-      relatedModel: 'LLaMA-3.1-70B',
-      relatedEngine: 'vllm',
-    },
-    {
-      id: 'act-6',
-      type: 'benchmark_failed',
-      title: 'Mistral-7B Serving test failed',
-      description: 'OOM error at concurrency=128, GPU memory exceeded',
-      timestamp: new Date(now.getTime() - 2.5 * 60 * 60 * 1000),
-      relatedModel: 'Mistral-7B',
-      relatedEngine: 'vllm',
-    },
-    {
-      id: 'act-7',
-      type: 'model_added',
-      title: 'New model registered: Yi-1.5-34B',
-      description: 'SGLang engine, 34B parameters',
-      timestamp: new Date(now.getTime() - 3.2 * 60 * 60 * 1000),
-      relatedModel: 'Yi-1.5-34B',
-      relatedEngine: 'sglang',
-    },
-    {
-      id: 'act-8',
-      type: 'system_alert',
-      title: 'GPU Node 3 temperature warning',
-      description: 'H100 reached 78°C, utilization at 91%',
-      timestamp: new Date(now.getTime() - 4 * 60 * 60 * 1000),
-    },
-    {
-      id: 'act-9',
-      type: 'benchmark_completed',
-      title: 'Qwen2.5-72B Single-Stream completed',
-      description: 'Throughput: 2,850 tokens/s, Latency P99: 89ms',
-      timestamp: new Date(now.getTime() - 5.5 * 60 * 60 * 1000),
-      relatedModel: 'Qwen2.5-72B',
-      relatedEngine: 'sglang',
-    },
-    {
-      id: 'act-10',
-      type: 'model_deployed',
-      title: 'DeepSeek-V2-Lite deployed',
-      description: 'Deployed on GPU Node 1 with SGLang engine',
-      timestamp: new Date(now.getTime() - 8 * 60 * 60 * 1000),
-      relatedModel: 'DeepSeek-V2-Lite',
-      relatedEngine: 'sglang',
-    },
-    {
-      id: 'act-11',
-      type: 'benchmark_started',
-      title: 'LLaMA-3.1-70B Multi-Stream started',
-      description: 'Concurrency: 32, Duration: 120s',
-      timestamp: new Date(now.getTime() - 10 * 60 * 60 * 1000),
-      relatedModel: 'LLaMA-3.1-70B',
-      relatedEngine: 'vllm',
-    },
-    {
-      id: 'act-12',
-      type: 'analysis_ready',
-      title: 'GPU Memory vs Performance analysis ready',
-      description: 'Optimal GPU memory utilization: 0.85',
-      timestamp: new Date(now.getTime() - 14 * 60 * 60 * 1000),
-      relatedModel: 'DeepSeek-V2-Lite',
-      relatedEngine: 'sglang',
-    },
-    {
-      id: 'act-13',
-      type: 'profile_created',
-      title: 'Profile "Low Latency" created',
-      description: 'Max sequences: 64, chunk prefill enabled',
-      timestamp: new Date(now.getTime() - 18 * 60 * 60 * 1000),
-      relatedModel: 'LLaMA-3.1-70B',
-      relatedEngine: 'vllm',
-    },
-    {
-      id: 'act-14',
-      type: 'system_alert',
-      title: 'API endpoint latency spike detected',
-      description: 'P99 latency exceeded 500ms for 2 minutes',
-      timestamp: new Date(now.getTime() - 22 * 60 * 60 * 1000),
-    },
-    {
-      id: 'act-15',
-      type: 'benchmark_completed',
-      title: 'Mistral-7B Single-Stream completed',
-      description: 'Throughput: 1,920 tokens/s, Latency P99: 67ms',
-      timestamp: new Date(now.getTime() - 26 * 60 * 60 * 1000),
-      relatedModel: 'Mistral-7B',
-      relatedEngine: 'vllm',
-    },
-  ]
+  const activities: TimelineActivity[] = []
+  const modelMap = new Map(models.map(m => [m.id, m]))
+
+  // Generate activities from benchmarks
+  if (benchmarks && benchmarks.length > 0) {
+    const sorted = [...benchmarks].sort((a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    )
+
+    sorted.forEach((b) => {
+      const model = modelMap.get(b.modelId)
+      const modelName = model?.name ?? b.name
+      const engine = (model?.engine ?? b.engine ?? 'vllm') as 'vllm' | 'sglang'
+      const scenario = formatScenario(b.scenario)
+
+      if (b.status === 'completed') {
+        activities.push({
+          id: `bench-completed-${b.id}`,
+          type: 'benchmark_completed',
+          title: `${modelName} ${scenario} completed`,
+          description: b.startedAt ? `Task completed successfully` : 'Completed',
+          timestamp: new Date(b.completedAt ?? b.updatedAt),
+          relatedModel: modelName,
+          relatedEngine: engine,
+        })
+      } else if (b.status === 'running') {
+        activities.push({
+          id: `bench-started-${b.id}`,
+          type: 'benchmark_started',
+          title: `${modelName} ${scenario} started`,
+          description: `Concurrency: ${b.concurrency}, Duration: ${b.duration}s`,
+          timestamp: new Date(b.startedAt ?? b.createdAt),
+          relatedModel: modelName,
+          relatedEngine: engine,
+        })
+      } else if (b.status === 'failed') {
+        activities.push({
+          id: `bench-failed-${b.id}`,
+          type: 'benchmark_failed',
+          title: `${modelName} ${scenario} failed`,
+          description: 'Task failed',
+          timestamp: new Date(b.updatedAt),
+          relatedModel: modelName,
+          relatedEngine: engine,
+        })
+      } else if (b.status === 'pending') {
+        activities.push({
+          id: `bench-pending-${b.id}`,
+          type: 'benchmark_started',
+          title: `${modelName} ${scenario} queued`,
+          description: `Concurrency: ${b.concurrency}, Duration: ${b.duration}s`,
+          timestamp: new Date(b.createdAt),
+          relatedModel: modelName,
+          relatedEngine: engine,
+        })
+      }
+    })
+  }
+
+  // Add model-added activities from models
+  if (models && models.length > 0) {
+    models.forEach((m) => {
+      activities.push({
+        id: `model-added-${m.id}`,
+        type: 'model_added',
+        title: `Model registered: ${m.name}`,
+        description: `${m.engine === 'vllm' ? 'VLLM' : 'SGLang'} engine registered`,
+        timestamp: new Date(m.createdAt),
+        relatedModel: m.name,
+        relatedEngine: m.engine as 'vllm' | 'sglang',
+      })
+    })
+  }
+
+  // Sort all activities by timestamp descending
+  activities.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+
+  // If no activities from data, add a placeholder
+  if (activities.length === 0) {
+    activities.push({
+      id: 'system-welcome',
+      type: 'system_alert' as ActivityType,
+      title: 'Welcome to InferBench',
+      description: 'Add models and run benchmarks to see activity here',
+      timestamp: now,
+    })
+  }
+
   return activities
 }
 
-function getRelativeTime(date: Date): string {
+function getRelativeTime(date: Date, t: (key: string) => string): string {
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
   const diffSec = Math.floor(diffMs / 1000)
@@ -406,22 +364,22 @@ function getRelativeTime(date: Date): string {
   const diffHr = Math.floor(diffMin / 60)
   const diffDay = Math.floor(diffHr / 24)
 
-  if (diffSec < 60) return 'just now' // handled by i18n below
-  if (diffMin < 60) return `${diffMin}m ago`
-  if (diffHr < 24) return `${diffHr}h ago`
-  if (diffDay === 1) return 'Yesterday' // handled by i18n below
-  if (diffDay < 7) return `${diffDay}d ago`
+  if (diffSec < 60) return t('dashboard.activity.justNow')
+  if (diffMin < 60) return t('common.minutesAgo', { n: diffMin })
+  if (diffHr < 24) return t('common.hoursAgo', { n: diffHr })
+  if (diffDay === 1) return t('dashboard.activity.yesterday')
+  if (diffDay < 7) return t('common.daysAgo', { n: diffDay })
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-function getDateLabel(date: Date): string | null {
+function getDateLabel(date: Date, t: (key: string) => string): string | null {
   const now = new Date()
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000)
   const activityDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
 
-  if (activityDay.getTime() === today.getTime()) return 'Today'
-  if (activityDay.getTime() === yesterday.getTime()) return 'Yesterday'
+  if (activityDay.getTime() === today.getTime()) return t('dashboard.activity.today')
+  if (activityDay.getTime() === yesterday.getTime()) return t('dashboard.activity.yesterday')
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
@@ -563,12 +521,20 @@ export function DashboardPage() {
   const latencyHighlight = useChartHighlight()
 
   // API hooks
-  const { data: dashboardStats, loading: statsLoading } = useDashboardStats()
-  const { data: models, loading: modelsLoading } = useModels()
-  const { data: benchmarks, loading: benchmarksLoading } = useBenchmarks()
-  const { data: results, loading: resultsLoading } = useResults()
+  const { data: dashboardStats, loading: statsLoading, error: statsError, refresh: refreshStats } = useDashboardStats()
+  const { data: models, loading: modelsLoading, error: modelsError, refresh: refreshModels } = useModels()
+  const { data: benchmarks, loading: benchmarksLoading, error: benchmarksError, refresh: refreshBenchmarks } = useBenchmarks()
+  const { data: results, loading: resultsLoading, error: resultsError, refresh: refreshResults } = useResults()
 
   const isLoading = statsLoading || modelsLoading || benchmarksLoading || resultsLoading
+  const hasError = !isLoading && (statsError || modelsError || benchmarksError || resultsError)
+
+  const retryAll = useCallback(() => {
+    refreshStats()
+    refreshModels()
+    refreshBenchmarks()
+    refreshResults()
+  }, [refreshStats, refreshModels, refreshBenchmarks, refreshResults])
 
   // ── Compute stats from API data ─────────────────────────────────────────
   const stats = useMemo(() => {
@@ -624,7 +590,7 @@ export function DashboardPage() {
         displayValue: avgP99 > 0 ? formatNumber(avgP99) : '0',
         unit: 'ms',
         change: results && results.filter(r => r.latencyP99Ms > 0).length > 0
-          ? `From ${results.filter(r => r.latencyP99Ms > 0).length} results`
+          ? t('dashboard.stats.fromResults', { count: results.filter(r => r.latencyP99Ms > 0).length })
           : 'N/A',
         trend: { value: 4.7, direction: 'down' as const },
         icon: Clock,
@@ -950,46 +916,53 @@ export function DashboardPage() {
   const [metricsPeriod, setMetricsPeriod] = useState<TimelinePeriod>('24h')
 
   const metricsTimelineData = useMemo(() => {
-    const pointCount = metricsPeriod === '24h' ? 24 : metricsPeriod === '7d' ? 28 : 30
-    const data = []
+    if (!results || results.length === 0) return []
 
-    for (let i = 0; i < pointCount; i++) {
-      const progress = i / pointCount
+    // Use actual benchmark results sorted by time
+    const validResults = results
+      .filter(r => r.throughputTokensPerSec > 0)
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
 
-      // Throughput: slight upward trend with noise
-      const throughputBase = 2800 + progress * 600
-      const throughputNoise = (Math.sin(i * 0.7) * 200) + (Math.cos(i * 1.3) * 150) + (Math.random() - 0.5) * 100
-      const throughput = Math.max(1800, Math.round(throughputBase + throughputNoise))
+    if (validResults.length === 0) return []
 
-      // Latency P99: slight downward trend (improving) with occasional spikes
-      const latencyBase = 180 - progress * 25
-      const latencyNoise = (Math.sin(i * 0.5) * 15) + (Math.cos(i * 1.1) * 10) + (Math.random() - 0.5) * 8
-      const latencySpike = (i === Math.floor(pointCount * 0.6) || i === Math.floor(pointCount * 0.85)) ? 40 + Math.random() * 20 : 0
-      const latency = Math.max(80, Math.round(latencyBase + latencyNoise + latencySpike))
+    // Limit data points based on period
+    const maxPoints = metricsPeriod === '24h' ? 24 : metricsPeriod === '7d' ? 28 : 30
 
-      // Error rate: mostly flat near 0 with occasional spikes
-      const errorBase = 0.2
-      const errorNoise = Math.random() * 0.15
-      const errorSpike = (i === Math.floor(pointCount * 0.4) || i === Math.floor(pointCount * 0.75)) ? 1.5 + Math.random() * 1.5 : 0
-      const errorRate = Math.max(0, Math.round((errorBase + errorNoise + errorSpike) * 100) / 100)
-
-      // GPU efficiency: stable around 75-85% with daily patterns
-      const gpuBase = 78 + Math.sin(i * (Math.PI * 2 / (metricsPeriod === '24h' ? 24 : 7))) * 5
-      const gpuNoise = (Math.random() - 0.5) * 4
-      const gpuEfficiency = Math.max(60, Math.min(98, Math.round((gpuBase + gpuNoise) * 10) / 10))
-
-      data.push({
+    // If we have fewer results than maxPoints, just use them all
+    if (validResults.length <= maxPoints) {
+      return validResults.map((r, i) => ({
         index: i,
-        label: metricsPeriod === '24h' ? `${i}h` : metricsPeriod === '7d' ? `D${Math.floor(i / 4) + 1}` : `D${i + 1}`,
-        throughput,
-        latency,
-        errorRate,
-        gpuEfficiency,
+        label: metricsPeriod === '24h'
+          ? new Date(r.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', hour12: false }) + 'h'
+          : `D${i + 1}`,
+        throughput: Math.round(r.throughputTokensPerSec),
+        latency: Math.round(r.latencyP99Ms),
+        errorRate: Math.round(r.errorRate * 100) / 100,
+        gpuEfficiency: Math.round(r.gpuUtilization * 10) / 10,
+      }))
+    }
+
+    // Otherwise, sample evenly across the results
+    const sampled = []
+    for (let i = 0; i < maxPoints; i++) {
+      const idx = Math.floor((i / maxPoints) * validResults.length)
+      const r = validResults[idx]
+      sampled.push({
+        index: i,
+        label: metricsPeriod === '24h'
+          ? new Date(r.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', hour12: false }) + 'h'
+          : metricsPeriod === '7d'
+            ? `D${Math.floor(i / 4) + 1}`
+            : `D${i + 1}`,
+        throughput: Math.round(r.throughputTokensPerSec),
+        latency: Math.round(r.latencyP99Ms),
+        errorRate: Math.round(r.errorRate * 100) / 100,
+        gpuEfficiency: Math.round(r.gpuUtilization * 10) / 10,
       })
     }
 
-    return data
-  }, [metricsPeriod])
+    return sampled
+  }, [results, metricsPeriod])
 
   const metricsSummary = useMemo(() => {
     if (metricsTimelineData.length === 0) return null
@@ -1075,12 +1048,25 @@ export function DashboardPage() {
   }, [gpuNodes])
 
   // ── Activity Timeline state & simulation ─────────────────────────────────
-  const [timelineActivities, setTimelineActivities] = useState<TimelineActivity[]>(generateInitialActivities)
+  const [timelineActivities, setTimelineActivities] = useState<TimelineActivity[]>([])
   const [timelineFilter, setTimelineFilter] = useState<'all' | 'benchmark' | 'model' | 'analysis' | 'alert'>('all')
   const [timelineExpanded, setTimelineExpanded] = useState(false)
   const activityIdRef = useRef(100)
 
+  // Initialize activities from API data
+  useEffect(() => {
+    if (benchmarks && models) {
+      const initialActivities = generateActivitiesFromData(
+        benchmarks,
+        models.map(m => ({ id: m.id, name: m.name, engine: m.engine })),
+      )
+      setTimelineActivities(initialActivities)
+    }
+  }, [benchmarks, models])
+
   const addRandomActivity = useCallback(() => {
+    // Only add live activities if we have real data
+    if (!benchmarks || benchmarks.length === 0) return
     const template = RANDOM_ACTIVITIES[Math.floor(Math.random() * RANDOM_ACTIVITIES.length)]
     const newActivity: TimelineActivity = {
       ...template,
@@ -1100,7 +1086,7 @@ export function DashboardPage() {
         prev.map(a => a.id === newActivity.id ? { ...a, isNew: false } : a)
       )
     }, 2000)
-  }, [])
+  }, [benchmarks])
 
   useEffect(() => {
     const interval = setInterval(addRandomActivity, 15000 + Math.random() * 5000)
@@ -1152,6 +1138,38 @@ export function DashboardPage() {
           </Button>
         </div>
       </motion.div>
+
+      {/* ── Error State ─────────────────────────────────────────────── */}
+      {hasError && (
+        <motion.div variants={item}>
+          <Card className="border-l-4 border-l-red-500 py-0 gap-0 overflow-hidden">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-400">
+                    <AlertTriangle className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-sm">{t('dashboard.error')}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {statsError || modelsError || benchmarksError || resultsError}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={retryAll}
+                  className="gap-1.5 cursor-pointer"
+                >
+                  <Zap className="h-3.5 w-3.5" />
+                  {t('dashboard.retry')}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
 
       {/* ── Stats Cards ─────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -1244,7 +1262,7 @@ export function DashboardPage() {
                 <div>
                   <p className="text-sm text-muted-foreground font-medium">{t('dashboard.platformGrade')}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {platformGrade ? `Average across ${results?.filter(r => r.throughputTokensPerSec > 0).length ?? 0} benchmark results` : 'No benchmark results yet'}
+                    {platformGrade ? t('dashboard.avgAcrossResults', { count: results?.filter(r => r.throughputTokensPerSec > 0).length ?? 0 }) : t('dashboard.noBenchmarkResults')}
                   </p>
                 </div>
               </div>
@@ -1260,7 +1278,7 @@ export function DashboardPage() {
                         </div>
                       </TooltipTrigger>
                       <TooltipContent side="bottom" className="bg-popover text-popover-foreground border shadow-lg p-3 max-w-xs">
-                        <p className="font-semibold mb-2">Grade Breakdown</p>
+                        <p className="font-semibold mb-2">{t('dashboard.gradeBreakdown')}</p>
                         <div className="space-y-1.5">
                           {[
                             { label: 'Throughput', grade: throughput.grade, weight: '30%' },
@@ -1279,12 +1297,12 @@ export function DashboardPage() {
                             )
                           })}
                         </div>
-                        <p className="text-[10px] text-muted-foreground mt-2">Overall: {overall.label} ({overall.score}/100)</p>
+                        <p className="text-[10px] text-muted-foreground mt-2">{t('dashboard.overall')}: {overall.label} ({t('dashboard.score')}: {overall.score}/100)</p>
                       </TooltipContent>
                     </Tooltip>
                     <div className="hidden sm:block">
                       <p className={`text-lg font-bold ${style.color}`}>{overall.label}</p>
-                      <p className="text-xs text-muted-foreground">Score: {overall.score}/100</p>
+                      <p className="text-xs text-muted-foreground">{t('dashboard.score')}: {overall.score}/100</p>
                     </div>
                   </div>
                 )
@@ -1352,7 +1370,7 @@ export function DashboardPage() {
             <Card className="h-full card-hover-enhanced">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base font-semibold">{t('dashboard.performanceOverview')}</CardTitle>
-                <CardDescription>Throughput (tokens/s) over recent benchmarks</CardDescription>
+                <CardDescription>{t('dashboard.throughputOverRecent')}</CardDescription>
               </CardHeader>
               <CardContent>
                 {throughputData.length > 0 ? (
@@ -1417,7 +1435,7 @@ export function DashboardPage() {
                   </div>
                 ) : (
                   <div className="h-[280px] flex items-center justify-center text-muted-foreground text-sm">
-                    No benchmark results yet. Run a benchmark to see throughput data.
+                    {t('dashboard.emptyState.noThroughputData')}
                   </div>
                 )}
               </CardContent>
@@ -1433,7 +1451,7 @@ export function DashboardPage() {
             <Card className="h-full card-hover-enhanced">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base font-semibold">{t('dashboard.engineDistribution')}</CardTitle>
-                <CardDescription>Models by inference engine</CardDescription>
+                <CardDescription>{t('dashboard.modelsByEngine')}</CardDescription>
               </CardHeader>
               <CardContent>
                 {models && models.length > 0 ? (
@@ -1472,7 +1490,7 @@ export function DashboardPage() {
                   </>
                 ) : (
                   <div className="h-[200px] flex items-center justify-center text-muted-foreground text-sm">
-                    No models registered yet.
+                    {t('dashboard.emptyState.noModels')}
                   </div>
                 )}
               </CardContent>
@@ -1491,7 +1509,7 @@ export function DashboardPage() {
             <Card className="h-full card-hover-enhanced">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base font-semibold">{t('dashboard.latencyDistribution')}</CardTitle>
-                <CardDescription>By percentile (ms)</CardDescription>
+                <CardDescription>{t('dashboard.byPercentile')}</CardDescription>
               </CardHeader>
               <CardContent>
                 {results && results.some(r => r.latencyP99Ms > 0) ? (
@@ -1529,7 +1547,7 @@ export function DashboardPage() {
                   </div>
                 ) : (
                   <div className="h-[240px] flex items-center justify-center text-muted-foreground text-sm">
-                    No latency data available.
+                    {t('dashboard.emptyState.noLatencyData')}
                   </div>
                 )}
               </CardContent>
@@ -1544,7 +1562,7 @@ export function DashboardPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="text-base font-semibold">{t('dashboard.recentResults')}</CardTitle>
-                  <CardDescription>Latest test runs across all models</CardDescription>
+                  <CardDescription>{t('dashboard.latestTestRuns')}</CardDescription>
                 </div>
                 <Button
                   variant="ghost"
@@ -1552,7 +1570,7 @@ export function DashboardPage() {
                   className="text-xs gap-1 text-muted-foreground hover:text-foreground cursor-pointer"
                   onClick={() => setActivePage('reports')}
                 >
-                  View All
+                  {t('dashboard.viewAll')}
                   <ArrowRight className="h-3 w-3" />
                 </Button>
               </div>
@@ -1560,7 +1578,7 @@ export function DashboardPage() {
             <CardContent className="px-0 pb-2">
               {isLoading ? (
                 <div className="px-6 py-8 text-center text-muted-foreground text-sm animate-pulse">
-                  Loading benchmark results...
+                  {t('dashboard.loadingResults')}
                 </div>
               ) : recentResults.length > 0 ? (
                 <Table>
@@ -1609,7 +1627,7 @@ export function DashboardPage() {
                 </Table>
               ) : (
                 <div className="px-6 py-8 text-center text-muted-foreground text-sm">
-                  No benchmark results yet. Run a benchmark to see results here.
+                  {t('dashboard.emptyState.noBenchmarks')}
                 </div>
               )}
             </CardContent>
@@ -1619,7 +1637,7 @@ export function DashboardPage() {
 
       {/* ── Quick Actions ───────────────────────────────────────────── */}
       <motion.div variants={item}>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           <Card
             className="cursor-pointer group hover:border-emerald-200 dark:hover:border-emerald-800 transition-all duration-300 py-0 animate-shimmer-glow quick-action-glow quick-action-glow-emerald"
             onClick={() => setActivePage('benchmark')}
@@ -1631,7 +1649,7 @@ export function DashboardPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-sm">{t('dashboard.quickAction.newBenchmark')}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Run a new benchmark test</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{t('dashboard.quickAction.runBenchmarkDesc')}</p>
                 </div>
                 <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all" />
               </div>
@@ -1648,8 +1666,8 @@ export function DashboardPage() {
                   <Plus className="h-5 w-5" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-sm">Add Model</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Register a new model</p>
+                  <p className="font-semibold text-sm">{t('dashboard.quickAction.addModel')}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{t('dashboard.quickAction.addModelDesc')}</p>
                 </div>
                 <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all" />
               </div>
@@ -1666,10 +1684,28 @@ export function DashboardPage() {
                   <SlidersHorizontal className="h-5 w-5" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-sm">Quick Tune</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Adjust model parameters</p>
+                  <p className="font-semibold text-sm">{t('dashboard.quickAction.quickTune')}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{t('dashboard.quickAction.tuneParamsDesc')}</p>
                 </div>
                 <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-sky-600 group-hover:translate-x-0.5 transition-all" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card
+            className="cursor-pointer group hover:border-rose-200 dark:hover:border-rose-800 transition-all duration-300 py-0"
+            onClick={() => setActivePage('reports')}
+          >
+            <CardContent className="p-5">
+              <div className="flex items-center gap-4">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-rose-50 text-rose-600 dark:bg-rose-950 dark:text-rose-400 group-hover:bg-rose-100 dark:group-hover:bg-rose-900 transition-colors will-change-transform">
+                  <FileBarChart className="h-5 w-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-sm">{t('dashboard.quickAction.viewReports')}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{t('dashboard.quickAction.viewReportsDesc')}</p>
+                </div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-rose-600 group-hover:translate-x-0.5 transition-all" />
               </div>
             </CardContent>
           </Card>
@@ -1685,7 +1721,7 @@ export function DashboardPage() {
           </div>
           <div className="flex items-center gap-1.5">
             <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-xs text-muted-foreground">Live · 2s refresh</span>
+            <span className="text-xs text-muted-foreground">{t('dashboard.liveRefresh')}</span>
           </div>
         </div>
 
@@ -1746,7 +1782,7 @@ export function DashboardPage() {
                           <div className="flex items-center justify-between mb-1">
                             <div className="flex items-center gap-1.5">
                               <Thermometer className="h-3 w-3 text-muted-foreground" />
-                              <span className="text-xs text-muted-foreground">Temp</span>
+                              <span className="text-xs text-muted-foreground">{t('dashboard.temp')}</span>
                             </div>
                             <span className={`text-xs font-semibold ${tempTextColor}`}>{node.temperature}°C</span>
                           </div>
@@ -1762,7 +1798,7 @@ export function DashboardPage() {
                           <div className="flex items-center justify-between mb-1">
                             <div className="flex items-center gap-1.5">
                               <HardDrive className="h-3 w-3 text-muted-foreground" />
-                              <span className="text-xs text-muted-foreground">Memory</span>
+                              <span className="text-xs text-muted-foreground">{t('dashboard.memory')}</span>
                             </div>
                             <span className="text-xs font-semibold text-foreground">
                               {node.memoryUsed} / {node.memoryTotal} GB
@@ -1779,7 +1815,7 @@ export function DashboardPage() {
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
                             <Zap className="h-3 w-3 text-muted-foreground" />
-                            <span className="text-xs text-muted-foreground">Power</span>
+                            <span className="text-xs text-muted-foreground">{t('dashboard.power')}</span>
                           </div>
                           <span className="text-xs font-semibold text-foreground">
                             {node.powerDraw}W / {node.powerMax}W
@@ -1800,7 +1836,7 @@ export function DashboardPage() {
           <Card className="py-0 gap-0 card-hover-enhanced">
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-muted-foreground font-medium">Total GPU Memory</span>
+                <span className="text-xs text-muted-foreground font-medium">{t('dashboard.totalGpuMemory')}</span>
                 <span className="text-xs font-semibold text-foreground">
                   {gpuClusterSummary.totalMemUsed} / {gpuClusterSummary.totalMemMax} GB
                 </span>
@@ -1816,7 +1852,7 @@ export function DashboardPage() {
           <Card className="py-0 gap-0 card-hover-enhanced">
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-muted-foreground font-medium">Avg Utilization</span>
+                <span className="text-xs text-muted-foreground font-medium">{t('dashboard.avgUtilization')}</span>
                 <span className="text-xs font-semibold text-foreground">
                   {gpuClusterSummary.avgUtil}%
                 </span>
@@ -1839,7 +1875,7 @@ export function DashboardPage() {
           <Card className="py-0 gap-0 card-hover-enhanced">
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-muted-foreground font-medium">Total Power</span>
+                <span className="text-xs text-muted-foreground font-medium">{t('dashboard.totalPower')}</span>
                 <span className="text-xs font-semibold text-foreground">
                   {gpuClusterSummary.totalPower}W / {gpuClusterSummary.totalPowerMax}W
                 </span>
@@ -1855,16 +1891,16 @@ export function DashboardPage() {
           <Card className="py-0 gap-0 card-hover-enhanced">
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-muted-foreground font-medium">Active Processes</span>
+                <span className="text-xs text-muted-foreground font-medium">{t('dashboard.activeProcesses')}</span>
               </div>
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1.5">
                   <div className="h-2 w-2 rounded-full bg-emerald-500" />
-                  <span className="text-xs text-foreground font-medium">7 serving</span>
+                  <span className="text-xs text-foreground font-medium">{dashboardStats?.completedBenchmarks ?? 0} {t('dashboard.serving')}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <div className="h-2 w-2 rounded-full bg-amber-500" />
-                  <span className="text-xs text-foreground font-medium">3 benchmarking</span>
+                  <span className="text-xs text-foreground font-medium">{dashboardStats?.runningBenchmarks ?? 0} {t('dashboard.benchmarking')}</span>
                 </div>
               </div>
             </CardContent>
@@ -1886,16 +1922,16 @@ export function DashboardPage() {
                   </div>
                   <div>
                     <p className="font-semibold text-sm">{t('dashboard.gpuCluster')}</p>
-                    <p className="text-xs text-muted-foreground">8/8 GPUs Active</p>
+                    <p className="text-xs text-muted-foreground">{dashboardStats ? `${dashboardStats.activeModels}/${dashboardStats.totalModels} GPUs Active` : '--'}</p>
                   </div>
                 </div>
                 <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 text-[11px] font-semibold border-0 animate-pulse-prominent">
-                  Online
+                  {t('common.online')}
                 </Badge>
               </div>
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>GPU Utilization</span>
+                  <span>{t('dashboard.gpuUtilization')}</span>
                   <span className="font-medium text-foreground">73%</span>
                 </div>
                 <Progress value={73} className="h-2 [&>div]:bg-emerald-500" />
@@ -1912,17 +1948,17 @@ export function DashboardPage() {
                     <HardDrive className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="font-semibold text-sm">Memory Pool</p>
-                    <p className="text-xs text-muted-foreground">58.4 / 80 GB Used</p>
+                    <p className="font-semibold text-sm">{t('dashboard.memoryPool')}</p>
+                    <p className="text-xs text-muted-foreground">{gpuClusterSummary.totalMemUsed} / {gpuClusterSummary.totalMemMax} GB Used</p>
                   </div>
                 </div>
                 <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 text-[11px] font-semibold border-0 animate-pulse-prominent">
-                  Warning
+                  {t('dashboard.warning')}
                 </Badge>
               </div>
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Memory Usage</span>
+                  <span>{t('dashboard.memoryUsage')}</span>
                   <span className="font-medium text-foreground">73%</span>
                 </div>
                 <Progress value={73} className="h-2 [&>div]:bg-amber-500" />
@@ -1939,21 +1975,21 @@ export function DashboardPage() {
                     <Wifi className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="font-semibold text-sm">API Endpoint</p>
-                    <p className="text-xs text-muted-foreground">All services operational</p>
+                    <p className="font-semibold text-sm">{t('dashboard.apiEndpoint')}</p>
+                    <p className="text-xs text-muted-foreground">{t('dashboard.allServicesOperational')}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse-prominent" />
                   <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 text-[11px] font-semibold border-0 animate-pulse-prominent">
-                    Healthy
+                    {t('dashboard.healthy')}
                   </Badge>
                 </div>
               </div>
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Response Time</span>
-                  <span className="font-medium text-foreground">12ms avg</span>
+                  <span>{t('dashboard.responseTime')}</span>
+                  <span className="font-medium text-foreground">{dashboardStats?.avgLatency ? Math.round(dashboardStats.avgLatency) : 12}ms avg</span>
                 </div>
                 <Progress value={12} className="h-2 [&>div]:bg-sky-500" />
               </div>
@@ -1972,16 +2008,16 @@ export function DashboardPage() {
                   <Trophy className="h-5 w-5" />
                 </div>
                 <div>
-                  <CardTitle className="text-base font-semibold">Performance Ranking</CardTitle>
-                  <CardDescription>Top models ranked by performance metrics</CardDescription>
+                  <CardTitle className="text-base font-semibold">{t('dashboard.performanceRanking')}</CardTitle>
+                  <CardDescription>{t('dashboard.performanceRankingDesc')}</CardDescription>
                 </div>
               </div>
               {/* Ranking Metrics Selector */}
               <div className="flex items-center gap-1.5">
                 {([
-                  { key: 'throughput' as const, label: 'Throughput' },
-                  { key: 'latency' as const, label: 'Latency' },
-                  { key: 'composite' as const, label: 'Composite' },
+                  { key: 'throughput' as const, label: t('dashboard.throughputLabel') },
+                  { key: 'latency' as const, label: t('dashboard.latencyLabel') },
+                  { key: 'composite' as const, label: t('dashboard.compositeLabel') },
                 ]).map((opt) => (
                   <button
                     key={opt.key}
@@ -2002,19 +2038,19 @@ export function DashboardPage() {
           <CardContent className="px-0 pb-2">
             {isLoading ? (
               <div className="px-5 py-8 text-center text-muted-foreground text-sm animate-pulse">
-                Loading ranking data...
+                {t('dashboard.loadingRanking')}
               </div>
             ) : rankingData.length > 0 ? (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="pl-6 w-12">Rank</TableHead>
-                    <TableHead>Model</TableHead>
-                    <TableHead>Engine</TableHead>
-                    <TableHead className="text-right">Throughput</TableHead>
-                    <TableHead className="text-right hidden sm:table-cell">Latency P99</TableHead>
-                    <TableHead className="text-center">Score</TableHead>
-                    <TableHead className="text-right pr-6 w-16">Trend</TableHead>
+                    <TableHead className="pl-6 w-12">{t('dashboard.rank')}</TableHead>
+                    <TableHead>{t('common.model')}</TableHead>
+                    <TableHead>{t('dashboard.engineCol')}</TableHead>
+                    <TableHead className="text-right">{t('dashboard.throughputLabel')}</TableHead>
+                    <TableHead className="text-right hidden sm:table-cell">{t('dashboard.stats.avgLatencyP99')}</TableHead>
+                    <TableHead className="text-center">{t('dashboard.score')}</TableHead>
+                    <TableHead className="text-right pr-6 w-16">{t('dashboard.trend')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -2094,7 +2130,7 @@ export function DashboardPage() {
               </Table>
             ) : (
               <div className="px-5 py-8 text-center text-muted-foreground text-sm">
-                No benchmark results yet. Run benchmarks to see performance rankings.
+                {t('dashboard.emptyState.noRankingData')}
               </div>
             )}
           </CardContent>
@@ -2111,8 +2147,8 @@ export function DashboardPage() {
                   <Crown className="h-5 w-5" />
                 </div>
                 <div>
-                  <CardTitle className="text-base font-semibold">Engine Efficiency Matrix</CardTitle>
-                  <CardDescription>VLLM vs SGLang performance comparison</CardDescription>
+                  <CardTitle className="text-base font-semibold">{t('dashboard.engineEfficiency')}</CardTitle>
+                  <CardDescription>{t('dashboard.engineEfficiencyDesc')}</CardDescription>
                 </div>
               </div>
               {/* Overall Winner Badge */}
@@ -2124,7 +2160,7 @@ export function DashboardPage() {
                     : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'
                 )}>
                   <Crown className="h-3 w-3" />
-                  {engineEfficiency.overallWinner === 'vllm' ? 'VLLM Leads' : 'SGLang Leads'}
+                  {engineEfficiency.overallWinner === 'vllm' ? t('dashboard.vllmLeads') : t('dashboard.sglangLeads')}
                 </Badge>
               )}
             </div>
@@ -2132,7 +2168,7 @@ export function DashboardPage() {
           <CardContent className="px-5 pb-5 pt-0">
             {isLoading ? (
               <div className="py-8 text-center text-muted-foreground text-sm animate-pulse">
-                Loading engine efficiency data...
+                {t('dashboard.loadingEngine')}
               </div>
             ) : results && results.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2146,7 +2182,7 @@ export function DashboardPage() {
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <div className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                      <span className="text-sm font-semibold">VLLM Throughput</span>
+                      <span className="text-sm font-semibold">{t('common.vllm')} {t('dashboard.stats.avgThroughput')}</span>
                       {engineEfficiency.throughputWinner === 'vllm' && (
                         <Crown className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                       )}
@@ -2177,7 +2213,7 @@ export function DashboardPage() {
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <div className="h-2.5 w-2.5 rounded-full bg-amber-500" />
-                      <span className="text-sm font-semibold">SGLang Throughput</span>
+                      <span className="text-sm font-semibold">{t('common.sglang')} {t('dashboard.stats.avgThroughput')}</span>
                       {engineEfficiency.throughputWinner === 'sglang' && (
                         <Crown className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
                       )}
@@ -2208,7 +2244,7 @@ export function DashboardPage() {
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <div className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                      <span className="text-sm font-semibold">VLLM Latency P99</span>
+                      <span className="text-sm font-semibold">{t('common.vllm')} {t('dashboard.stats.avgLatencyP99')}</span>
                       {engineEfficiency.latencyWinner === 'vllm' && (
                         <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                       )}
@@ -2239,7 +2275,7 @@ export function DashboardPage() {
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <div className="h-2.5 w-2.5 rounded-full bg-amber-500" />
-                      <span className="text-sm font-semibold">SGLang Latency P99</span>
+                      <span className="text-sm font-semibold">{t('common.sglang')} {t('dashboard.stats.avgLatencyP99')}</span>
                       {engineEfficiency.latencyWinner === 'sglang' && (
                         <Check className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
                       )}
@@ -2262,7 +2298,7 @@ export function DashboardPage() {
               </div>
             ) : (
               <div className="py-8 text-center text-muted-foreground text-sm">
-                No benchmark results yet. Run benchmarks to see engine efficiency comparison.
+                {t('dashboard.emptyState.noEngineData')}
               </div>
             )}
           </CardContent>
@@ -2279,8 +2315,8 @@ export function DashboardPage() {
                   <TrendingUp className="h-5 w-5" />
                 </div>
                 <div>
-                  <CardTitle className="text-base font-semibold">Performance Metrics Timeline</CardTitle>
-                  <CardDescription>Key metrics trends over time</CardDescription>
+                  <CardTitle className="text-base font-semibold">{t('dashboard.performanceTimeline')}</CardTitle>
+                  <CardDescription>{t('dashboard.performanceTimelineDesc')}</CardDescription>
                 </div>
               </div>
               <div className="flex items-center gap-1 rounded-lg bg-muted/50 p-1">
@@ -2302,6 +2338,11 @@ export function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="px-5 pb-5 pt-0">
+            {metricsTimelineData.length === 0 ? (
+              <div className="py-8 text-center text-muted-foreground text-sm">
+                {t('dashboard.emptyState.noTimelineData')}
+              </div>
+            ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
               {/* Throughput Trend */}
               <motion.div
@@ -2311,7 +2352,7 @@ export function DashboardPage() {
                 className="rounded-xl border p-4 space-y-3"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground">Throughput Trend</span>
+                  <span className="text-xs font-medium text-muted-foreground">{t('dashboard.throughputTrend')}</span>
                   {metricsSummary && (
                     <div className={cn(
                       'flex items-center gap-0.5 text-[11px] font-medium px-1.5 py-0.5 rounded-full',
@@ -2358,7 +2399,7 @@ export function DashboardPage() {
                 className="rounded-xl border p-4 space-y-3"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground">Latency P99 Trend</span>
+                  <span className="text-xs font-medium text-muted-foreground">{t('dashboard.latencyTrend')}</span>
                   {metricsSummary && (
                     <div className={cn(
                       'flex items-center gap-0.5 text-[11px] font-medium px-1.5 py-0.5 rounded-full',
@@ -2405,7 +2446,7 @@ export function DashboardPage() {
                 className="rounded-xl border p-4 space-y-3"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground">Error Rate Trend</span>
+                  <span className="text-xs font-medium text-muted-foreground">{t('dashboard.errorRateTrend')}</span>
                   {metricsSummary && (
                     <div className={cn(
                       'flex items-center gap-0.5 text-[11px] font-medium px-1.5 py-0.5 rounded-full',
@@ -2452,7 +2493,7 @@ export function DashboardPage() {
                 className="rounded-xl border p-4 space-y-3"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground">GPU Efficiency Trend</span>
+                  <span className="text-xs font-medium text-muted-foreground">{t('dashboard.gpuEfficiencyTrend')}</span>
                   {metricsSummary && (
                     <div className={cn(
                       'flex items-center gap-0.5 text-[11px] font-medium px-1.5 py-0.5 rounded-full',
@@ -2476,21 +2517,22 @@ export function DashboardPage() {
                   <span className="text-sm text-muted-foreground ml-1">%</span>
                 </div>
                 <ChartContainer
-                  config={{ value: { label: 'GPU Efficiency', color: '#3b82f6' } }}
+                  config={{ value: { label: t('dashboard.gpuEfficiencyTrend'), color: '#10b981' } }}
                   className="h-[50px] w-full"
                 >
                   <AreaChart data={metricsTimelineData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
                     <defs>
                       <linearGradient id="sparklineGpu" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <Area type="monotone" dataKey="gpuEfficiency" stroke="#3b82f6" fill="url(#sparklineGpu)" strokeWidth={1.5} dot={false} />
+                    <Area type="monotone" dataKey="gpuEfficiency" stroke="#10b981" fill="url(#sparklineGpu)" strokeWidth={1.5} dot={false} />
                   </AreaChart>
                 </ChartContainer>
               </motion.div>
             </div>
+            )}
           </CardContent>
         </Card>
       </motion.div>
@@ -2507,24 +2549,24 @@ export function DashboardPage() {
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                     <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
                   </span>
-                  <CardTitle className="text-base font-semibold">Activity Timeline</CardTitle>
+                  <CardTitle className="text-base font-semibold">{t('dashboard.recentActivity')}</CardTitle>
                 </div>
                 <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 font-medium border-emerald-300 text-emerald-600 dark:border-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30">
-                  Live
+                  {t('dashboard.activity.live')}
                 </Badge>
               </div>
-              <span className="text-xs text-muted-foreground">{filteredActivities.length} events</span>
+              <span className="text-xs text-muted-foreground">{filteredActivities.length} {t('dashboard.activity.events')}</span>
             </div>
           </CardHeader>
           <CardContent className="px-5 pb-5 pt-0">
             {/* ── Filter Bar ──────────────────────────────────────── */}
             <div className="flex items-center gap-1.5 mb-4 flex-wrap">
               {([
-                { key: 'all' as const, label: 'All' },
-                { key: 'benchmark' as const, label: 'Benchmarks' },
-                { key: 'model' as const, label: 'Models' },
-                { key: 'analysis' as const, label: 'Analysis' },
-                { key: 'alert' as const, label: 'Alerts' },
+                { key: 'all' as const, label: t('dashboard.activity.all') },
+                { key: 'benchmark' as const, label: t('dashboard.activity.benchmarksLabel') },
+                { key: 'model' as const, label: t('dashboard.activity.modelsLabel') },
+                { key: 'analysis' as const, label: t('dashboard.activity.analysisLabel') },
+                { key: 'alert' as const, label: t('dashboard.activity.alertsLabel') },
               ]).map((filter) => (
                 <button
                   key={filter.key}
@@ -2558,8 +2600,8 @@ export function DashboardPage() {
                 {displayedActivities.map((activity, index) => {
                   const config = ACTIVITY_TYPE_CONFIG[activity.type]
                   const Icon = config.icon
-                  const dateLabel = getDateLabel(activity.timestamp)
-                  const showDateLabel = index === 0 || getDateLabel(displayedActivities[index - 1].timestamp) !== dateLabel
+                  const dateLabel = getDateLabel(activity.timestamp, t)
+                  const showDateLabel = index === 0 || getDateLabel(displayedActivities[index - 1].timestamp, t) !== dateLabel
 
                   return (
                     <motion.div
@@ -2619,12 +2661,12 @@ export function DashboardPage() {
                                   config.bgColor,
                                   'border-transparent'
                                 )}>
-                                  {config.label}
+                                  {t(`dashboard.activity.${activity.type.replace(/^benchmark_/, '') === 'completed' ? 'completed' : activity.type.replace(/^benchmark_/, '') === 'started' ? 'started' : activity.type.replace(/^benchmark_/, '') === 'failed' ? 'failed' : activity.type === 'model_added' ? 'modelAdded' : activity.type === 'model_deployed' ? 'deployed' : activity.type === 'profile_created' ? 'profileCreated' : activity.type === 'analysis_ready' ? 'analysisReady' : 'systemAlert'}`)}
                                 </Badge>
                               </div>
                               <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{activity.description}</p>
                               <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                                <span className="text-[11px] text-muted-foreground">{getRelativeTime(activity.timestamp)}</span>
+                                <span className="text-[11px] text-muted-foreground">{getRelativeTime(activity.timestamp, t)}</span>
                                 {activity.relatedModel && (
                                   <div className="flex items-center gap-1.5">
                                     <span className="text-[11px] text-muted-foreground/60">•</span>
@@ -2663,12 +2705,12 @@ export function DashboardPage() {
                     {timelineExpanded ? (
                       <>
                         <ChevronUp className="h-3.5 w-3.5" />
-                        Show less
+                        {t('dashboard.activity.showLess')}
                       </>
                     ) : (
                       <>
                         <ChevronDown className="h-3.5 w-3.5" />
-                        Show all ({filteredActivities.length})
+                        {t('dashboard.activity.showAll')} ({filteredActivities.length})
                       </>
                     )}
                   </Button>

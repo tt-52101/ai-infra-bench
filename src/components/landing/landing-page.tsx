@@ -1,12 +1,13 @@
 'use client'
 
-import React from 'react'
-import { motion } from 'framer-motion'
+import React, { useState, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   SlidersHorizontal, Rocket, BarChart3, Eye, TrendingUp, Puzzle,
   Monitor, Code2, Terminal, Bell, Shield, Zap, Server,
   Database, Activity, ArrowRight, Check, Github, BookOpen,
-  Users, FileText, ChevronRight, Cpu, Box,
+  Users, FileText, ChevronRight, Cpu, Box, Menu, X, Mail,
+  Twitter, Linkedin, Globe, Building2, Sparkles,
 } from 'lucide-react'
 import {
   LineChart, Line, AreaChart, Area, XAxis, YAxis,
@@ -137,6 +138,16 @@ function Section({ id, children, className = '' }: {
 export function LandingPage() {
   const { t } = useI18n()
   const { setActivePage } = useAppStore()
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  // Close mobile menu on resize
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 768) setMobileMenuOpen(false)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   const tuningParams = [
     { name: 'max_model_len', value: '8192', desc: t('landing.tuning.maxModelLenDesc') },
@@ -158,6 +169,98 @@ export function LandingPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      {/* ── Sticky Header / Nav ── */}
+      <motion.header
+        className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-md"
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: 'easeOut' }}
+      >
+        <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
+          {/* Logo */}
+          <div className="flex items-center gap-2">
+            <div className="h-7 w-7 rounded-lg bg-emerald-600 flex items-center justify-center">
+              <Cpu className="h-3.5 w-3.5 text-white" />
+            </div>
+            <span className="text-lg font-bold tracking-tight">InferBench</span>
+          </div>
+
+          {/* Desktop Nav Links */}
+          <nav className="hidden md:flex items-center gap-6">
+            {[
+              { label: t('landing.nav.features'), href: '#features' },
+              { label: t('landing.nav.architecture'), href: '#architecture' },
+              { label: t('landing.nav.pricing'), href: '#pricing' },
+            ].map((link) => (
+              <a
+                key={link.href}
+                href={link.href}
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {link.label}
+              </a>
+            ))}
+          </nav>
+
+          {/* Desktop Buttons */}
+          <div className="hidden md:flex items-center gap-3">
+            <Button variant="ghost" size="sm" onClick={() => setActivePage('auth')}>
+              {t('landing.nav.signIn')}
+            </Button>
+            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => setActivePage('auth')}>
+              {t('landing.nav.getStarted')}
+            </Button>
+          </div>
+
+          {/* Mobile Menu Button */}
+          <button
+            className="md:hidden p-2 text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label="Toggle menu"
+          >
+            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+        </div>
+
+        {/* Mobile Menu */}
+        <AnimatePresence>
+          {mobileMenuOpen && (
+            <motion.div
+              className="md:hidden border-t bg-background"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <div className="px-4 py-3 space-y-2">
+                {[
+                  { label: t('landing.nav.features'), href: '#features' },
+                  { label: t('landing.nav.architecture'), href: '#architecture' },
+                  { label: t('landing.nav.pricing'), href: '#pricing' },
+                ].map((link) => (
+                  <a
+                    key={link.href}
+                    href={link.href}
+                    className="block py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    {link.label}
+                  </a>
+                ))}
+                <div className="flex gap-2 pt-2">
+                  <Button variant="outline" size="sm" className="flex-1" onClick={() => { setActivePage('auth'); setMobileMenuOpen(false) }}>
+                    {t('landing.nav.signIn')}
+                  </Button>
+                  <Button size="sm" className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setActivePage('auth'); setMobileMenuOpen(false) }}>
+                    {t('landing.nav.getStarted')}
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.header>
+
       {/* ── Hero Section ── */}
       <section className="relative overflow-hidden">
         {/* Background gradient effects */}
@@ -239,6 +342,39 @@ export function LandingPage() {
           </motion.div>
         </div>
       </section>
+
+      {/* ── Trusted By Section ── */}
+      <Section id="trusted">
+        <div className="max-w-6xl mx-auto px-4 text-center">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+          >
+            <p className="text-sm font-medium text-muted-foreground mb-6">{t('landing.trusted.title')}</p>
+            <div className="flex flex-wrap items-center justify-center gap-8 md:gap-12">
+              {[
+                { name: 'NVIDIA', icon: Cpu },
+                { name: 'Meta AI', icon: Building2 },
+                { name: 'Hugging Face', icon: Sparkles },
+                { name: 'AWS', icon: Globe },
+                { name: 'Azure', icon: Server },
+                { name: 'Google Cloud', icon: Database },
+              ].map((company) => (
+                <div
+                  key={company.name}
+                  className="flex items-center gap-2 text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors duration-300"
+                >
+                  <company.icon className="h-5 w-5" />
+                  <span className="text-base md:text-lg font-bold tracking-wide">{company.name}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground/50 mt-4">{t('landing.trusted.subtitle')}</p>
+          </motion.div>
+        </div>
+      </Section>
 
       {/* ── Core Features Section ── */}
       <Section id="features">
@@ -909,14 +1045,16 @@ export function LandingPage() {
                 accent: false,
                 cta: t('landing.pricing.getStarted'),
                 ctaVariant: 'outline' as const,
+                ctaAction: 'auth' as const,
               },
               {
                 tier: t('landing.pricing.pro'),
                 price: t('landing.pricing.proPrice'),
                 features: t('landing.pricing.proFeatures').split(','),
                 accent: true,
-                cta: t('landing.pricing.currentPlan'),
+                cta: t('landing.pricing.getStarted'),
                 ctaVariant: 'default' as const,
+                ctaAction: 'auth' as const,
               },
               {
                 tier: t('landing.pricing.enterprise'),
@@ -925,6 +1063,7 @@ export function LandingPage() {
                 accent: false,
                 cta: t('landing.pricing.contactSales'),
                 ctaVariant: 'outline' as const,
+                ctaAction: 'mailto' as const,
               },
             ].map((plan, idx) => (
               <motion.div
@@ -963,6 +1102,13 @@ export function LandingPage() {
                           ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
                           : 'border-emerald-500/30 hover:bg-emerald-500/5'
                       }`}
+                      onClick={() => {
+                        if (plan.ctaAction === 'auth') {
+                          setActivePage('auth')
+                        } else if (plan.ctaAction === 'mailto') {
+                          window.open('mailto:sales@inferbench.dev?subject=Enterprise%20Inquiry', '_blank')
+                        }
+                      }}
                     >
                       {plan.cta}
                     </Button>
@@ -974,30 +1120,78 @@ export function LandingPage() {
         </div>
       </Section>
 
+      {/* ── CTA Banner Section ── */}
+      <Section id="cta" className="bg-gradient-to-br from-emerald-500/5 via-emerald-500/[0.02] to-amber-500/5 dark:from-emerald-500/10 dark:to-amber-500/10">
+        <div className="max-w-4xl mx-auto px-4 text-center">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+          >
+            <Badge variant="secondary" className="mb-4 px-4 py-1.5 text-sm bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
+              <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+              {t('landing.footer.openSource')}
+            </Badge>
+            <h2 className="text-3xl md:text-4xl lg:text-5xl font-extrabold mb-4">
+              {t('landing.cta.title')}
+            </h2>
+            <p className="text-base md:text-lg text-muted-foreground max-w-2xl mx-auto mb-8">
+              {t('landing.cta.description')}
+            </p>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+              <Button size="lg" className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 h-12 text-base shadow-lg shadow-emerald-500/25" onClick={() => setActivePage('auth')}>
+                {t('landing.cta.button')}
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+              <Button size="lg" variant="outline" className="px-8 h-12 text-base border-emerald-500/30 hover:bg-emerald-500/5" onClick={() => window.open('mailto:sales@inferbench.dev?subject=Enterprise%20Inquiry', '_blank')}>
+                <Mail className="mr-2 h-4 w-4" />
+                {t('landing.cta.contact')}
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      </Section>
+
       {/* ── Footer Section ── */}
       <footer className="border-t bg-muted/20 py-12">
         <div className="max-w-6xl mx-auto px-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-8">
             {/* Brand */}
-            <div className="md:col-span-1">
+            <div className="col-span-2 md:col-span-1">
               <div className="flex items-center gap-2 mb-3">
                 <div className="h-8 w-8 rounded-lg bg-emerald-600 flex items-center justify-center">
                   <Cpu className="h-4 w-4 text-white" />
                 </div>
                 <span className="text-lg font-bold">InferBench</span>
               </div>
-              <p className="text-sm text-muted-foreground mb-3">{t('landing.hero.description')}</p>
-              <div className="flex items-center gap-2">
+              <p className="text-sm text-muted-foreground mb-4 leading-relaxed">{t('landing.hero.description')}</p>
+              <div className="flex items-center gap-2 mb-3">
                 <Badge variant="secondary" className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
                   {t('landing.footer.openSource')}
                 </Badge>
                 <span className="text-[10px] text-muted-foreground">{t('landing.footer.license')}</span>
               </div>
+              {/* Social Icons */}
+              <div className="flex items-center gap-3 mt-3">
+                <a href="https://github.com/inferbench" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-emerald-500 transition-colors" aria-label="GitHub">
+                  <Github className="h-4 w-4" />
+                </a>
+                <a href="https://twitter.com/inferbench" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-emerald-500 transition-colors" aria-label="Twitter">
+                  <Twitter className="h-4 w-4" />
+                </a>
+                <a href="https://linkedin.com/company/inferbench" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-emerald-500 transition-colors" aria-label="LinkedIn">
+                  <Linkedin className="h-4 w-4" />
+                </a>
+                <a href="mailto:hello@inferbench.dev" className="text-muted-foreground hover:text-emerald-500 transition-colors" aria-label="Email">
+                  <Mail className="h-4 w-4" />
+                </a>
+              </div>
             </div>
 
-            {/* Links columns */}
+            {/* Product Links */}
             <div>
-              <h4 className="text-sm font-semibold mb-3">Product</h4>
+              <h4 className="text-sm font-semibold mb-3">{t('landing.footer.product')}</h4>
               <ul className="space-y-2">
                 {[
                   { label: t('landing.features.quickTuning'), href: '#tuning' },
@@ -1014,14 +1208,15 @@ export function LandingPage() {
               </ul>
             </div>
 
+            {/* Resources Links */}
             <div>
-              <h4 className="text-sm font-semibold mb-3">Resources</h4>
+              <h4 className="text-sm font-semibold mb-3">{t('landing.footer.resources')}</h4>
               <ul className="space-y-2">
                 {[
                   { label: t('landing.footer.documentation'), icon: BookOpen },
                   { label: t('landing.footer.changelog'), icon: FileText },
-                  { label: t('landing.footer.community'), icon: Users },
-                  { label: t('landing.footer.github'), icon: Github },
+                  { label: t('nav.apiDocs'), icon: Code2 },
+                  { label: t('landing.footer.blog'), icon: BookOpen },
                 ].map((link) => (
                   <li key={link.label}>
                     <a href="#" className="text-sm text-muted-foreground hover:text-emerald-500 transition-colors flex items-center gap-1.5">
@@ -1033,28 +1228,61 @@ export function LandingPage() {
               </ul>
             </div>
 
+            {/* Community Links */}
             <div>
-              <h4 className="text-sm font-semibold mb-3">Engines</h4>
+              <h4 className="text-sm font-semibold mb-3">{t('landing.footer.communityTitle')}</h4>
               <ul className="space-y-2">
-                {['vLLM', 'SGLang', 'TensorRT-LLM', 'TGI'].map((engine) => (
-                  <li key={engine}>
-                    <span className="text-sm text-muted-foreground">{engine}</span>
+                {[
+                  { label: t('landing.footer.github'), icon: Github },
+                  { label: t('landing.footer.community'), icon: Users },
+                  { label: t('landing.footer.careers'), icon: Building2 },
+                  { label: t('landing.footer.contactUs'), icon: Mail },
+                ].map((link) => (
+                  <li key={link.label}>
+                    <a href="#" className="text-sm text-muted-foreground hover:text-emerald-500 transition-colors flex items-center gap-1.5">
+                      <link.icon className="h-3 w-3" />
+                      {link.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Company Links */}
+            <div>
+              <h4 className="text-sm font-semibold mb-3">{t('landing.footer.company')}</h4>
+              <ul className="space-y-2">
+                {[
+                  { label: t('landing.footer.about') },
+                  { label: t('landing.footer.blog') },
+                  { label: t('landing.footer.privacy') },
+                  { label: t('landing.footer.terms') },
+                ].map((link) => (
+                  <li key={link.label}>
+                    <a href="#" className="text-sm text-muted-foreground hover:text-emerald-500 transition-colors">
+                      {link.label}
+                    </a>
                   </li>
                 ))}
               </ul>
             </div>
           </div>
 
-          <div className="mt-8 pt-6 border-t border-border/30 flex flex-col md:flex-row items-center justify-between gap-2">
-            <span className="text-xs text-muted-foreground/60">
-              © 2024 InferBench. {t('landing.footer.license')}
-            </span>
+          <div className="mt-10 pt-6 border-t border-border/30 flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-4">
+              <span className="text-xs text-muted-foreground/60">
+                © {new Date().getFullYear()} InferBench. {t('landing.footer.rights')}
+              </span>
+              <span className="text-xs text-muted-foreground/40">
+                {t('landing.footer.license')}
+              </span>
+            </div>
             <div className="flex items-center gap-4">
-              <a href="#" className="text-muted-foreground hover:text-emerald-500 transition-colors">
-                <Github className="h-4 w-4" />
+              <a href="#" className="text-xs text-muted-foreground/60 hover:text-emerald-500 transition-colors">
+                {t('landing.footer.privacy')}
               </a>
-              <a href="#" className="text-muted-foreground hover:text-emerald-500 transition-colors">
-                <BookOpen className="h-4 w-4" />
+              <a href="#" className="text-xs text-muted-foreground/60 hover:text-emerald-500 transition-colors">
+                {t('landing.footer.terms')}
               </a>
             </div>
           </div>

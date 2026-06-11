@@ -1,6 +1,6 @@
 'use client'
 
-import { Cpu, LayoutDashboard, Rocket, Box, SlidersHorizontal, Play, BarChart3, TrendingUp, Settings, Globe, Wifi, WifiOff, AlertTriangle, Code2, LogIn } from 'lucide-react'
+import { Cpu, LayoutDashboard, Rocket, Box, SlidersHorizontal, Play, BarChart3, TrendingUp, Settings, Globe, Code2, LogIn, User, KeyRound, LogOut } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '@/lib/store'
@@ -23,6 +23,16 @@ import {
   SidebarSeparator,
 } from '@/components/ui/sidebar'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 
 // ── Mini Stat Indicator Components ──────────────────────────────────────────
 
@@ -96,7 +106,7 @@ function SystemStatusIndicator({ status, t }: { status: 'online' | 'degraded' | 
 // ── Main Sidebar Component ───────────────────────────────────────────────────
 
 export function AppSidebar() {
-  const { activePage, setActivePage } = useAppStore()
+  const { activePage, setActivePage, isAuthenticated, user, signOut } = useAppStore()
   const { t, locale, setLocale } = useI18n()
 
   // Live stats from API hooks
@@ -137,6 +147,11 @@ export function AppSidebar() {
     { key: 'settings', label: t('nav.settings'), icon: Settings, shortcut: '⌘7' },
     { key: 'apiDocs', label: t('nav.apiDocs'), icon: Code2, shortcut: '⌘8' },
   ]
+
+  // Get user initials for avatar
+  const userInitials = user?.name
+    ? user.name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
+    : 'U'
 
   return (
     <Sidebar
@@ -242,31 +257,91 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="px-4 pb-4 border-t border-border/40 pt-3 relative space-y-2">
+        {/* Sign In button or Profile Dropdown */}
         <SidebarMenu>
           <SidebarMenuItem>
-            <TooltipProvider delayDuration={500}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <SidebarMenuButton
-                    isActive={activePage === 'auth'}
-                    onClick={() => setActivePage('auth')}
-                    className={cn(
-                      'relative h-10 px-3 rounded-lg transition-all duration-300 ease-out will-change-transform',
-                      'hover:scale-[1.02] active:scale-[0.98]',
-                      activePage === 'auth'
-                        ? 'bg-emerald-600/10 text-emerald-700 dark:text-emerald-400 font-semibold shadow-sm shadow-emerald-500/10 scale-[1.02]'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
-                    )}
+            {isAuthenticated && user ? (
+              <DropdownMenu>
+                <TooltipProvider delayDuration={500}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <DropdownMenuTrigger asChild>
+                        <SidebarMenuButton
+                          className={cn(
+                            'relative h-10 px-3 rounded-lg transition-all duration-300 ease-out will-change-transform',
+                            'hover:scale-[1.02] active:scale-[0.98]',
+                            'text-foreground hover:bg-muted/60 w-full'
+                          )}
+                        >
+                          <Avatar className="h-6 w-6">
+                            <AvatarFallback className="bg-emerald-600 text-white text-[10px] font-bold">
+                              {userInitials}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="group-data-[collapsible=icon]:hidden text-sm font-medium truncate">
+                            {user.name}
+                          </span>
+                        </SidebarMenuButton>
+                      </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="text-xs">
+                      {user.name}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                <DropdownMenuContent side="right" align="end" className="w-56">
+                  <DropdownMenuLabel className="font-normal">
+                    <div className="flex flex-col space-y-1">
+                      <p className="text-sm font-medium leading-none">{user.name}</p>
+                      <p className="text-xs leading-none text-muted-foreground">{user.email}</p>
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuGroup>
+                    <DropdownMenuItem onClick={() => setActivePage('settings')}>
+                      <User className="mr-2 h-4 w-4" />
+                      {t('auth.profile.settings')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setActivePage('settings')}>
+                      <KeyRound className="mr-2 h-4 w-4" />
+                      {t('auth.profile.apiKeys')}
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={signOut}
+                    className="text-red-600 dark:text-red-400 focus:text-red-600 dark:focus:text-red-400"
                   >
-                    <LogIn className="h-[18px] w-[18px]" />
-                    <span className="group-data-[collapsible=icon]:hidden">{t('nav.auth')}</span>
-                  </SidebarMenuButton>
-                </TooltipTrigger>
-                <TooltipContent side="right" className="text-xs">
-                  {t('nav.auth')}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+                    <LogOut className="mr-2 h-4 w-4" />
+                    {t('auth.profile.signOut')}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <TooltipProvider delayDuration={500}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <SidebarMenuButton
+                      isActive={activePage === 'auth'}
+                      onClick={() => setActivePage('auth')}
+                      className={cn(
+                        'relative h-10 px-3 rounded-lg transition-all duration-300 ease-out will-change-transform',
+                        'hover:scale-[1.02] active:scale-[0.98]',
+                        activePage === 'auth'
+                          ? 'bg-emerald-600/10 text-emerald-700 dark:text-emerald-400 font-semibold shadow-sm shadow-emerald-500/10 scale-[1.02]'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                      )}
+                    >
+                      <LogIn className="h-[18px] w-[18px]" />
+                      <span className="group-data-[collapsible=icon]:hidden">{t('nav.auth')}</span>
+                    </SidebarMenuButton>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="text-xs">
+                    {t('nav.auth')}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
           </SidebarMenuItem>
         </SidebarMenu>
         {/* Animated gradient line at the bottom */}

@@ -17,6 +17,7 @@ import AnalysisPage from '@/components/analysis/analysis-page'
 import { SettingsPage } from '@/components/settings/settings-page'
 import { ApiDocsPage } from '@/components/api-docs/api-docs-page'
 import { AuthPage } from '@/components/auth/auth-page'
+import { AuthBanner } from '@/components/auth/auth-banner'
 import { AppSidebar } from '@/components/app-sidebar'
 import { CommandPalette } from '@/components/command-palette'
 import { NotificationCenter } from '@/components/notification-center'
@@ -239,6 +240,10 @@ function HomeContent() {
                 <PageContent page={activePage} />
               ) : (
                 <div className="p-4 md:p-6 max-w-[1600px] mx-auto">
+                  {/* Auth banner for protected pages */}
+                  {(activePage === 'dashboard' || activePage === 'reports' || activePage === 'analysis') && (
+                    <AuthBanner />
+                  )}
                   <PageContent page={activePage} />
                 </div>
               )}

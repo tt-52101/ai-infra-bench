@@ -1,10 +1,23 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 import type { PageKey, ModelInfo, ParameterProfileInfo, BenchmarkTaskInfo, BenchmarkResultInfo, InflectionAnalysisInfo, DashboardStats, Notification } from './types'
+
+interface AuthUser {
+  name: string
+  email: string
+}
 
 interface AppState {
   // 导航
   activePage: PageKey
   setActivePage: (page: PageKey) => void
+
+  // 认证状态
+  isAuthenticated: boolean
+  setAuthenticated: (v: boolean) => void
+  user: AuthUser | null
+  setUser: (user: AuthUser | null) => void
+  signOut: () => void
 
   // 命令面板动作信号
   pendingAction: string | null
@@ -58,86 +71,104 @@ interface AppState {
   setLoading: (loading: boolean) => void
 }
 
-export const useAppStore = create<AppState>((set) => ({
-  // 导航
-  activePage: 'landing',
-  setActivePage: (page) => set({ activePage: page }),
+export const useAppStore = create<AppState>()(
+  persist(
+    (set) => ({
+      // 导航
+      activePage: 'landing',
+      setActivePage: (page) => set({ activePage: page }),
 
-  // 命令面板动作信号
-  pendingAction: null,
-  setPendingAction: (action) => set({ pendingAction: action }),
-  
-  // 模型
-  models: [],
-  setModels: (models) => set({ models }),
-  addModel: (model) => set((state) => ({ models: [...state.models, model] })),
-  updateModel: (id, model) => set((state) => ({
-    models: state.models.map((m) => m.id === id ? { ...m, ...model } : m)
-  })),
-  removeModel: (id) => set((state) => ({
-    models: state.models.filter((m) => m.id !== id)
-  })),
-  
-  // 参数配置
-  profiles: [],
-  setProfiles: (profiles) => set({ profiles }),
-  addProfile: (profile) => set((state) => ({ profiles: [...state.profiles, profile] })),
-  updateProfile: (id, profile) => set((state) => ({
-    profiles: state.profiles.map((p) => p.id === id ? { ...p, ...profile } : p)
-  })),
-  removeProfile: (id) => set((state) => ({
-    profiles: state.profiles.filter((p) => p.id !== id)
-  })),
-  
-  // Benchmark 任务
-  tasks: [],
-  setTasks: (tasks) => set({ tasks }),
-  addTask: (task) => set((state) => ({ tasks: [...state.tasks, task] })),
-  updateTask: (id, task) => set((state) => ({
-    tasks: state.tasks.map((t) => t.id === id ? { ...t, ...task } : t)
-  })),
-  removeTask: (id) => set((state) => ({
-    tasks: state.tasks.filter((t) => t.id !== id)
-  })),
-  
-  // Benchmark 结果
-  results: [],
-  setResults: (results) => set({ results }),
-  addResult: (result) => set((state) => ({ results: [...state.results, result] })),
-  
-  // 拐点分析
-  analyses: [],
-  setAnalyses: (analyses) => set({ analyses }),
-  addAnalysis: (analysis) => set((state) => ({ analyses: [...state.analyses, analysis] })),
-  
-  // 仪表盘
-  dashboardStats: {
-    totalModels: 0,
-    activeModels: 0,
-    totalBenchmarks: 0,
-    runningBenchmarks: 0,
-    avgThroughput: 0,
-    avgLatency: 0,
-    completedBenchmarks: 0,
-    failedBenchmarks: 0,
-  },
-  setDashboardStats: (stats) => set({ dashboardStats: stats }),
-  
-  // 通知
-  notifications: [],
-  setNotifications: (notifications) => set({ notifications }),
-  addNotification: (notification) => set((state) => ({ notifications: [notification, ...state.notifications] })),
-  markAsRead: (id) => set((state) => ({
-    notifications: state.notifications.map((n) => n.id === id ? { ...n, read: true } : n)
-  })),
-  markAllAsRead: () => set((state) => ({
-    notifications: state.notifications.map((n) => ({ ...n, read: true }))
-  })),
-  removeNotification: (id) => set((state) => ({
-    notifications: state.notifications.filter((n) => n.id !== id)
-  })),
+      // 认证状态
+      isAuthenticated: false,
+      setAuthenticated: (v) => set({ isAuthenticated: v }),
+      user: null,
+      setUser: (user) => set({ user }),
+      signOut: () => set({ isAuthenticated: false, user: null, activePage: 'landing' }),
 
-  // 加载状态
-  loading: false,
-  setLoading: (loading) => set({ loading }),
-}))
+      // 命令面板动作信号
+      pendingAction: null,
+      setPendingAction: (action) => set({ pendingAction: action }),
+      
+      // 模型
+      models: [],
+      setModels: (models) => set({ models }),
+      addModel: (model) => set((state) => ({ models: [...state.models, model] })),
+      updateModel: (id, model) => set((state) => ({
+        models: state.models.map((m) => m.id === id ? { ...m, ...model } : m)
+      })),
+      removeModel: (id) => set((state) => ({
+        models: state.models.filter((m) => m.id !== id)
+      })),
+      
+      // 参数配置
+      profiles: [],
+      setProfiles: (profiles) => set({ profiles }),
+      addProfile: (profile) => set((state) => ({ profiles: [...state.profiles, profile] })),
+      updateProfile: (id, profile) => set((state) => ({
+        profiles: state.profiles.map((p) => p.id === id ? { ...p, ...profile } : p)
+      })),
+      removeProfile: (id) => set((state) => ({
+        profiles: state.profiles.filter((p) => p.id !== id)
+      })),
+      
+      // Benchmark 任务
+      tasks: [],
+      setTasks: (tasks) => set({ tasks }),
+      addTask: (task) => set((state) => ({ tasks: [...state.tasks, task] })),
+      updateTask: (id, task) => set((state) => ({
+        tasks: state.tasks.map((t) => t.id === id ? { ...t, ...task } : t)
+      })),
+      removeTask: (id) => set((state) => ({
+        tasks: state.tasks.filter((t) => t.id !== id)
+      })),
+      
+      // Benchmark 结果
+      results: [],
+      setResults: (results) => set({ results }),
+      addResult: (result) => set((state) => ({ results: [...state.results, result] })),
+      
+      // 拐点分析
+      analyses: [],
+      setAnalyses: (analyses) => set({ analyses }),
+      addAnalysis: (analysis) => set((state) => ({ analyses: [...state.analyses, analysis] })),
+      
+      // 仪表盘
+      dashboardStats: {
+        totalModels: 0,
+        activeModels: 0,
+        totalBenchmarks: 0,
+        runningBenchmarks: 0,
+        avgThroughput: 0,
+        avgLatency: 0,
+        completedBenchmarks: 0,
+        failedBenchmarks: 0,
+      },
+      setDashboardStats: (stats) => set({ dashboardStats: stats }),
+      
+      // 通知
+      notifications: [],
+      setNotifications: (notifications) => set({ notifications }),
+      addNotification: (notification) => set((state) => ({ notifications: [notification, ...state.notifications] })),
+      markAsRead: (id) => set((state) => ({
+        notifications: state.notifications.map((n) => n.id === id ? { ...n, read: true } : n)
+      })),
+      markAllAsRead: () => set((state) => ({
+        notifications: state.notifications.map((n) => ({ ...n, read: true }))
+      })),
+      removeNotification: (id) => set((state) => ({
+        notifications: state.notifications.filter((n) => n.id !== id)
+      })),
+
+      // 加载状态
+      loading: false,
+      setLoading: (loading) => set({ loading }),
+    }),
+    {
+      name: 'inferbench-auth',
+      partialize: (state) => ({
+        isAuthenticated: state.isAuthenticated,
+        user: state.user,
+      }),
+    }
+  )
+)
