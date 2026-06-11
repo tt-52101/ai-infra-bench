@@ -1,23 +1,20 @@
-# Task 3-a: Model Comparison Mode
+# Task 3-a: Add Flame Chart to Analysis Page
 
 ## Summary
-Added Model Comparison feature to the InferBench platform allowing users to compare 2-4 models side-by-side with radar charts, specs tables, performance metric cards, and bar charts.
+Successfully added a "Flame Chart" tab to the Analysis page that visualizes execution timelines of concurrent inference requests.
 
-## Files Created
-- `src/components/models/model-comparison.tsx` - New component with RadarChart, specs table, performance cards, bar chart
+## Changes Made
+- **File Modified**: `src/components/analysis/analysis-page.tsx` (2145 → 2636 lines)
+- **New Imports**: Slider, Switch, Label (shadcn/ui); Layers, Filter (lucide-react)
+- **Removed Unused**: useBenchmarks import, FLAME_STAGE_HEX constant, flameAnimated state
 
-## Files Modified
-- `src/components/models/models-page.tsx` - Added Compare button, comparison state, checkbox selection, AnimatePresence transition
+## Key Components Added
+1. **Data Generation**: `generateFlameChartData()` with seeded random for deterministic output
+2. **Summary Computation**: `computeFlameSummary()` for total time, avg breakdown, bottleneck ID
+3. **UI**: Summary panel (4 cards), Controls (sliders + toggle), Flame Chart visualization, Stage breakdown bars, Info card
+4. **Animations**: framer-motion scaleX for bar entry, staggered row opacity, progress bar width animations
 
-## Key Implementation Details
-- Three-state UI: Normal → Select Mode → Active Comparison
-- 4-color palette: emerald, amber, sky, violet
-- Radar chart with 6 normalized dimensions
-- Specs table with sticky property column
-- Per-model performance cards with sparkline charts
-- Grouped bar chart with dual Y-axes
-- Max 4 models, min 2 models comparison
-- Responsive, dark mode compatible, Framer Motion transitions
-
-## Status
-✅ Complete - 0 lint errors, dev server compiles successfully
+## Verification
+- ESLint: 0 errors
+- Dev server: compiles successfully
+- Work record appended to worklog.md

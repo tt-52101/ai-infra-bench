@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo, useCallback } from 'react'
+import React, { useState, useMemo, useCallback, useRef } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   Legend, ScatterChart, Scatter, Cell, ComposedChart,
@@ -23,6 +23,7 @@ import {
   ArrowUp, Activity, Search,
   ChevronDown, ChevronUp, Trophy, FileText, FileJson, Clipboard,
   Loader2, AlertCircle, Scale, Cpu, HardDrive, Zap, FileDown,
+  GitBranch,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -42,6 +43,7 @@ import { CustomChartTooltip, type TooltipEntry } from '@/components/ui/custom-ch
 import { EnhancedReportsThroughputTooltip, EnhancedScatterTooltip, EnhancedReportsLatencyTooltip, EnhancedReportsTtftTpotTooltip, useChartHighlight, HighlightCard } from '@/components/ui/enhanced-chart-tooltip'
 import { calculateScore, getGradeStyle, type ScoreBreakdown } from '@/lib/performance-score'
 import { generateReportHTML, fetchReportData, openReportPrintWindow } from '@/lib/generate-report-html'
+import { motion } from 'framer-motion'
 
 // ─── Color Constants ─────────────────────────────────────────────
 const VLLM_COLOR = '#10b981'   // emerald-500
@@ -195,6 +197,352 @@ function getPerformanceColor(value: number, metric: 'throughput' | 'latency' | '
   return ''
 }
 
+// ─── Sankey Diagram SVG Component ─────────────────────────────────
+interface SankeyNodeData {
+  id: string
+  label: string
+  column: number
+  color: string
+  value: number
+}
+
+interface SankeyLinkData {
+  id: string
+  source: string
+  target: string
+  value: number
+  color: string
+  engine: EngineType | 'mixed'
+}
+
+interface SankeyLayoutNode extends SankeyNodeData {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+interface SankeyLayoutLink extends SankeyLinkData {
+  x0: number
+  y0: number
+  x1: number
+  y1: number
+  thickness: number
+  sourceNode: SankeyLayoutNode
+  targetNode: SankeyLayoutNode
+}
+
+function SankeyDiagram({
+  nodes,
+  links,
+  hoveredLink,
+  onHoverLink,
+  flowType,
+}: {
+  nodes: SankeyNodeData[]
+  links: SankeyLinkData[]
+  hoveredLink: string | null
+  onHoverLink: (id: string | null) => void
+  flowType: string
+}) {
+  const svgRef = useRef<SVGSVGElement>(null)
+  const [svgWidth, setSvgWidth] = useState(800)
+  const [tooltipInfo, setTooltipInfo] = useState<{
+    x: number
+    y: number
+    source: string
+    target: string
+    value: number
+    totalValue: number
+    engine: string
+  } | null>(null)
+
+  // Responsive width
+  React.useEffect(() => {
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setSvgWidth(entry.contentRect.width)
+      }
+    })
+    if (svgRef.current) {
+      observer.observe(svgRef.current.parentElement!)
+    }
+    return () => observer.disconnect()
+  }, [])
+
+  // Layout computation
+  const layout = useMemo(() => {
+    const padding = { top: 20, bottom: 20, left: 10, right: 10 }
+    const chartWidth = svgWidth - padding.left - padding.right
+    const chartHeight = 420 - padding.top - padding.bottom
+    const nodeWidth = 16
+    const nodePadding = 24
+
+    // Column positions (3 columns)
+    const colX = [
+      padding.left,
+      padding.left + chartWidth * 0.38,
+      padding.left + chartWidth * 0.76,
+    ]
+
+    // Group nodes by column
+    const columns = [0, 1, 2].map((col) => nodes.filter((n) => n.column === col))
+
+    // Calculate max value for each column for scaling
+    const columnMaxValues = columns.map((col) =>
+      col.reduce((s, n) => s + n.value, 0)
+    )
+
+    // Calculate node positions
+    const layoutNodes: SankeyLayoutNode[] = []
+    for (let colIdx = 0; colIdx < columns.length; colIdx++) {
+      const colNodes = columns[colIdx]
+      const totalValue = columnMaxValues[colIdx]
+      if (totalValue === 0) continue
+
+      const totalPadding = (colNodes.length - 1) * nodePadding
+      const availableHeight = chartHeight - totalPadding
+
+      let yOffset = padding.top
+
+      for (const node of colNodes) {
+        const proportion = node.value / totalValue
+        const nodeHeight = Math.max(proportion * availableHeight, 12)
+
+        layoutNodes.push({
+          ...node,
+          x: colX[colIdx],
+          y: yOffset,
+          width: nodeWidth,
+          height: nodeHeight,
+        })
+
+        yOffset += nodeHeight + nodePadding
+      }
+    }
+
+    // Build node map
+    const nodeMap = new Map<string, SankeyLayoutNode>()
+    for (const n of layoutNodes) nodeMap.set(n.id, n)
+
+    // Calculate link positions
+    const layoutLinks: SankeyLayoutLink[] = []
+
+    // Track y-offsets for each node's source and target connections
+    const sourceOffsets = new Map<string, number>()
+    const targetOffsets = new Map<string, number>()
+
+    for (const node of layoutNodes) {
+      sourceOffsets.set(node.id, node.y)
+      targetOffsets.set(node.id, node.y)
+    }
+
+    // Sort links by value descending for better visual
+    const sortedLinks = [...links].sort((a, b) => b.value - a.value)
+
+    for (const link of sortedLinks) {
+      const sourceNode = nodeMap.get(link.source)
+      const targetNode = nodeMap.get(link.target)
+      if (!sourceNode || !targetNode) continue
+
+      const sourceProportion = sourceNode.value > 0 ? link.value / sourceNode.value : 0
+      const targetProportion = targetNode.value > 0 ? link.value / targetNode.value : 0
+
+      const thickness = Math.max(
+        sourceProportion * sourceNode.height,
+        targetProportion * targetNode.height,
+        3
+      )
+
+      const y0 = sourceOffsets.get(link.source) || sourceNode.y
+      const y1 = targetOffsets.get(link.target) || targetNode.y
+
+      sourceOffsets.set(link.source, y0 + thickness)
+      targetOffsets.set(link.target, y1 + thickness)
+
+      layoutLinks.push({
+        ...link,
+        x0: sourceNode.x + sourceNode.width,
+        y0: y0 + thickness / 2,
+        x1: targetNode.x,
+        y1: y1 + thickness / 2,
+        thickness,
+        sourceNode,
+        targetNode,
+      })
+    }
+
+    return { layoutNodes, layoutLinks }
+  }, [nodes, links, svgWidth])
+
+  // Format value for display
+  const formatFlowValue = (val: number) => {
+    if (flowType === 'volume') return val.toLocaleString(undefined, { maximumFractionDigits: 0 })
+    if (flowType === 'latency') return `${val.toLocaleString(undefined, { maximumFractionDigits: 0 })} ms`
+    return `${val.toLocaleString(undefined, { maximumFractionDigits: 0 })} tok/s`
+  }
+
+  const getNodeLabel = (id: string) => {
+    const node = layout.layoutNodes.find((n) => n.id === id)
+    return node?.label || id
+  }
+
+  return (
+    <div className="relative w-full">
+      <svg
+        ref={svgRef}
+        width="100%"
+        height="420"
+        viewBox={`0 0 ${svgWidth} 420`}
+        className="overflow-visible"
+      >
+        {/* Column headers */}
+        <text x={svgWidth * 0.05 + 5} y={14} className="fill-muted-foreground text-[10px] font-semibold uppercase tracking-wider">Input</text>
+        <text x={svgWidth * 0.38 + 5} y={14} className="fill-muted-foreground text-[10px] font-semibold uppercase tracking-wider">Processing</text>
+        <text x={svgWidth * 0.76 + 5} y={14} className="fill-muted-foreground text-[10px] font-semibold uppercase tracking-wider">Output</text>
+
+        {/* Links */}
+        {layout.layoutLinks.map((link, idx) => {
+          const isHovered = hoveredLink === link.id
+          const isDimmed = hoveredLink !== null && !isHovered
+          const midX = (link.x0 + link.x1) / 2
+
+          const path = `M ${link.x0} ${link.y0} C ${midX} ${link.y0}, ${midX} ${link.y1}, ${link.x1} ${link.y1}`
+
+          return (
+            <motion.path
+              key={link.id}
+              d={path}
+              fill="none"
+              stroke={link.color}
+              strokeWidth={link.thickness}
+              strokeLinecap="round"
+              opacity={isDimmed ? 0.15 : isHovered ? 0.9 : 0.45}
+              initial={{ pathLength: 0, opacity: 0 }}
+              animate={{ pathLength: 1, opacity: isDimmed ? 0.15 : isHovered ? 0.9 : 0.45 }}
+              transition={{ duration: 0.8, delay: idx * 0.03, ease: 'easeOut' }}
+              onMouseEnter={(e) => {
+                onHoverLink(link.id)
+                const svgRect = svgRef.current?.parentElement?.getBoundingClientRect()
+                if (svgRect) {
+                  setTooltipInfo({
+                    x: e.clientX - svgRect.left,
+                    y: e.clientY - svgRect.top,
+                    source: getNodeLabel(link.source),
+                    target: getNodeLabel(link.target),
+                    value: link.value,
+                    totalValue: link.sourceNode.value,
+                    engine: link.engine === 'vllm' ? 'VLLM' : link.engine === 'sglang' ? 'SGLang' : 'Mixed',
+                  })
+                }
+              }}
+              onMouseMove={(e) => {
+                const svgRect = svgRef.current?.parentElement?.getBoundingClientRect()
+                if (svgRect) {
+                  setTooltipInfo((prev) => prev ? { ...prev, x: e.clientX - svgRect.left, y: e.clientY - svgRect.top } : null)
+                }
+              }}
+              onMouseLeave={() => {
+                onHoverLink(null)
+                setTooltipInfo(null)
+              }}
+              style={{ cursor: 'pointer' }}
+            />
+          )
+        })}
+
+        {/* Nodes */}
+        {layout.layoutNodes.map((node, idx) => {
+          const isRelatedToHovered = hoveredLink
+            ? layout.layoutLinks.some(
+                (l) => l.id === hoveredLink && (l.source === node.id || l.target === node.id)
+              )
+            : false
+          const isDimmed = hoveredLink !== null && !isRelatedToHovered
+
+          return (
+            <motion.g
+              key={node.id}
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: isDimmed ? 0.4 : 1, x: 0 }}
+              transition={{ duration: 0.4, delay: idx * 0.05 }}
+            >
+              {/* Node rectangle */}
+              <rect
+                x={node.x}
+                y={node.y}
+                width={node.width}
+                height={node.height}
+                rx={4}
+                fill={node.color}
+                opacity={0.9}
+              />
+              {/* Node label - positioned based on column */}
+              {node.column === 0 && (
+                <text
+                  x={node.x - 6}
+                  y={node.y + node.height / 2}
+                  textAnchor="end"
+                  dominantBaseline="middle"
+                  className="fill-foreground text-[11px] font-medium"
+                >
+                  {node.label}
+                </text>
+              )}
+              {node.column === 1 && (
+                <text
+                  x={node.x + node.width + 6}
+                  y={node.y + node.height / 2}
+                  textAnchor="start"
+                  dominantBaseline="middle"
+                  className="fill-foreground text-[11px] font-medium"
+                >
+                  {node.label}
+                </text>
+              )}
+              {node.column === 2 && (
+                <text
+                  x={node.x + node.width + 6}
+                  y={node.y + node.height / 2}
+                  textAnchor="start"
+                  dominantBaseline="middle"
+                  className="fill-foreground text-[11px] font-medium"
+                >
+                  {node.label}
+                </text>
+              )}
+            </motion.g>
+          )
+        })}
+      </svg>
+
+      {/* Hover Tooltip */}
+      {tooltipInfo && (
+        <div
+          className="absolute pointer-events-none z-50 rounded-lg border bg-popover px-3 py-2 shadow-md text-xs"
+          style={{
+            left: tooltipInfo.x + 12,
+            top: tooltipInfo.y - 40,
+          }}
+        >
+          <p className="font-semibold">{tooltipInfo.source} → {tooltipInfo.target}</p>
+          <p className="text-muted-foreground">
+            Flow: <span className="text-foreground font-medium">{formatFlowValue(tooltipInfo.value)}</span>
+            {tooltipInfo.totalValue > 0 && (
+              <span className="ml-1">
+                ({((tooltipInfo.value / tooltipInfo.totalValue) * 100).toFixed(1)}%)
+              </span>
+            )}
+          </p>
+          <p className="text-muted-foreground">
+            Engine: <span className="text-foreground font-medium">{tooltipInfo.engine}</span>
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Loading Skeleton ────────────────────────────────────────────
 function SkeletonCard() {
   return (
@@ -246,6 +594,11 @@ export default function ReportsPage() {
 
   // Waterfall tab: selected result ID for visualization
   const [waterfallResultId, setWaterfallResultId] = useState<string>('')
+
+  // Sankey tab: engine filter and flow type
+  const [sankeyEngineFilter, setSankeyEngineFilter] = useState<string>('all')
+  const [sankeyFlowType, setSankeyFlowType] = useState<string>('volume')
+  const [sankeyHoveredLink, setSankeyHoveredLink] = useState<string | null>(null)
 
   // Click-to-highlight state for charts
   const throughputHighlight = useChartHighlight()
@@ -318,83 +671,6 @@ export default function ReportsPage() {
 
     return rows
   }
-
-  // Waterfall: compute data for the selected result
-  const waterfallResult = useMemo(() => {
-    if (!waterfallResultId && filtered.length > 0) {
-      return filtered[0]
-    }
-    return filtered.find((r) => r.id === waterfallResultId) ?? filtered[0] ?? null
-  }, [waterfallResultId, filtered])
-
-  const waterfallData = useMemo(() => {
-    if (!waterfallResult) return []
-    return generateWaterfallData(waterfallResult)
-  }, [waterfallResult])
-
-  // Waterfall chart data in Recharts-friendly format (stacked horizontal bar)
-  const waterfallChartData = useMemo(() => {
-    if (waterfallData.length === 0) return []
-    return waterfallData.map((row) => {
-      const point: Record<string, string | number> = { label: row.label }
-      for (const stage of row.stages) {
-        point[`${stage.name}_start`] = stage.start
-        point[`${stage.name}_duration`] = stage.duration
-      }
-      point.totalMs = row.totalMs
-      return point
-    })
-  }, [waterfallData])
-
-  // Waterfall summary stats
-  const waterfallSummary = useMemo(() => {
-    if (waterfallData.length === 0) return null
-    const avgTotal = waterfallData.reduce((s, r) => s + r.totalMs, 0) / waterfallData.length
-    const totals = { queue: 0, tokenization: 0, prefill: 0, decode: 0, postProcessing: 0 }
-    for (const row of waterfallData) {
-      for (const stage of row.stages) {
-        const key = stage.name === 'Queue Wait' ? 'queue'
-          : stage.name === 'Tokenization' ? 'tokenization'
-          : stage.name === 'Prefill' ? 'prefill'
-          : stage.name === 'Decode' ? 'decode'
-          : 'postProcessing'
-        totals[key] += stage.duration
-      }
-    }
-    const n = waterfallData.length
-    const avgs = {
-      queue: totals.queue / n,
-      tokenization: totals.tokenization / n,
-      prefill: totals.prefill / n,
-      decode: totals.decode / n,
-      postProcessing: totals.postProcessing / n,
-    }
-    const totalAvg = avgs.queue + avgs.tokenization + avgs.prefill + avgs.decode + avgs.postProcessing
-    const pcts = {
-      queue: totalAvg > 0 ? (avgs.queue / totalAvg) * 100 : 0,
-      tokenization: totalAvg > 0 ? (avgs.tokenization / totalAvg) * 100 : 0,
-      prefill: totalAvg > 0 ? (avgs.prefill / totalAvg) * 100 : 0,
-      decode: totalAvg > 0 ? (avgs.decode / totalAvg) * 100 : 0,
-      postProcessing: totalAvg > 0 ? (avgs.postProcessing / totalAvg) * 100 : 0,
-    }
-    // Find hotspot (max percentage)
-    const entries = Object.entries(pcts) as [keyof typeof pcts, number][]
-    const hotspot = entries.reduce((max, [key, val]) => val > max[1] ? [key, val] as [keyof typeof pcts, number] : max, entries[0])
-    const hotspotLabel: Record<string, string> = {
-      queue: 'Queue Wait',
-      tokenization: 'Tokenization',
-      prefill: 'Prefill',
-      decode: 'Decode',
-      postProcessing: 'Post-processing',
-    }
-    return {
-      avgTotalMs: avgTotal,
-      avgQueuePct: pcts.queue,
-      avgPrefillPct: pcts.prefill,
-      avgDecodePct: pcts.decode,
-      hotspot: { key: hotspot[0], label: hotspotLabel[hotspot[0]], pct: hotspot[1] },
-    }
-  }, [waterfallData])
 
   // ─── API Data ────────────────────────────────────────────────
   const { data: resultsRaw, loading: resultsLoading, error: resultsError } = useResults()
@@ -492,6 +768,301 @@ export default function ReportsPage() {
     })
   }, [reportResults, modelFilter, engineFilter, scenarioFilter])
 
+  // ─── Sankey Data (depends on filtered) ──────────────────────────
+  const MIXED_COLOR = '#8b5cf6' // violet-500
+
+  // Sankey: apply additional engine filter for Sankey tab
+  const sankeyFiltered = useMemo(() => {
+    if (sankeyEngineFilter === 'all') return filtered
+    return filtered.filter((r) => r.engine === sankeyEngineFilter)
+  }, [filtered, sankeyEngineFilter])
+
+  // Sankey node and link types
+  interface SankeyNode {
+    id: string
+    label: string
+    column: number // 0=input, 1=processing, 2=output
+    color: string
+    value: number
+  }
+
+  interface SankeyLink {
+    id: string
+    source: string
+    target: string
+    value: number
+    color: string
+    engine: EngineType | 'mixed'
+  }
+
+  // Map scenario names to display labels
+  const SCENARIO_LABELS: Record<string, string> = {
+    'single_stream': 'Single Stream',
+    'multi_stream': 'Multi Stream',
+    'burst': 'Burst',
+    'serving': 'Serving',
+    'custom': 'Custom',
+  }
+
+  // Classify output category based on performance characteristics
+  function classifyOutput(r: ReportResult): string {
+    const throughput = r.throughputTokensPerSec
+    const latency = r.latencyP99Ms
+    const gpuMem = r.gpuMemGb
+
+    // Simple classification based on dominant characteristic
+    if (throughput > 5000 && latency < 100) return 'High Throughput'
+    if (latency < 60) return 'Low Latency'
+    if (gpuMem > 30) return 'High Memory'
+    return 'Balanced'
+  }
+
+  // Get flow value for a result based on flow type
+  function getFlowValue(r: ReportResult, flowType: string): number {
+    switch (flowType) {
+      case 'volume':
+        return 1 // each result counts as 1 unit
+      case 'latency':
+        return r.latencyP99Ms
+      case 'throughput':
+        return r.throughputTokensPerSec
+      default:
+        return 1
+    }
+  }
+
+  // Determine processing stage weights for a result
+  function getProcessingWeights(r: ReportResult): Record<string, number> {
+    const ttft = r.ttftMs || 50
+    const tpot = r.tpotMs || 5
+    const totalLatency = r.latencyP99Ms || (ttft + tpot * 50)
+    const queuePct = 0.08
+    const prefillPct = totalLatency > 0 ? Math.min(ttft / totalLatency, 0.6) : 0.3
+    const decodePct = totalLatency > 0 ? Math.min((tpot * 50) / totalLatency, 0.5) : 0.4
+    const postPct = Math.max(0, 1 - queuePct - prefillPct - decodePct)
+
+    return {
+      'Queue': queuePct,
+      'Prefill': prefillPct,
+      'Decode': decodePct,
+      'Post-processing': postPct,
+    }
+  }
+
+  // Get engine-based link color
+  function getLinkColor(engine: EngineType | 'mixed'): string {
+    if (engine === 'vllm') return VLLM_COLOR
+    if (engine === 'sglang') return SGLANG_COLOR
+    return MIXED_COLOR
+  }
+
+  const sankeyData = useMemo(() => {
+    const results = sankeyFiltered
+    if (results.length === 0) return { nodes: [] as SankeyNode[], links: [] as SankeyLink[] }
+
+    // Build node value maps
+    const inputValues = new Map<string, number>()    // scenario → value
+    const processValues = new Map<string, number>()   // processing stage → value
+    const outputValues = new Map<string, number>()    // output category → value
+
+    // Build link value maps: source→target → { value, engines }
+    const inputToProcess = new Map<string, { value: number; engines: Map<EngineType, number> }>()
+    const processToOutput = new Map<string, { value: number; engines: Map<EngineType, number> }>()
+
+    for (const r of results) {
+      const flowVal = getFlowValue(r, sankeyFlowType)
+      const scenario = r.scenario
+      const output = classifyOutput(r)
+      const weights = getProcessingWeights(r)
+
+      // Accumulate input node values
+      inputValues.set(scenario, (inputValues.get(scenario) || 0) + flowVal)
+
+      // For each processing stage, accumulate links
+      for (const [stage, weight] of Object.entries(weights)) {
+        const stageVal = flowVal * weight
+
+        // Accumulate processing node values
+        processValues.set(stage, (processValues.get(stage) || 0) + stageVal)
+
+        // Input → Processing link
+        const ipKey = `${scenario}→${stage}`
+        const ipExisting = inputToProcess.get(ipKey)
+        if (!ipExisting) {
+          const engines = new Map<EngineType, number>()
+          engines.set(r.engine, stageVal)
+          inputToProcess.set(ipKey, { value: stageVal, engines })
+        } else {
+          ipExisting.value += stageVal
+          ipExisting.engines.set(r.engine, (ipExisting.engines.get(r.engine) || 0) + stageVal)
+        }
+
+        // Processing → Output link
+        const poKey = `${stage}→${output}`
+        const poExisting = processToOutput.get(poKey)
+        if (!poExisting) {
+          const engines = new Map<EngineType, number>()
+          engines.set(r.engine, stageVal)
+          processToOutput.set(poKey, { value: stageVal, engines })
+        } else {
+          poExisting.value += stageVal
+          poExisting.engines.set(r.engine, (poExisting.engines.get(r.engine) || 0) + stageVal)
+        }
+
+        // Accumulate output node values
+        outputValues.set(output, (outputValues.get(output) || 0) + stageVal)
+      }
+    }
+
+    // Determine dominant engine for a link (for coloring)
+    function getDominantEngine(engines: Map<EngineType, number>): EngineType | 'mixed' {
+      const vllmVal = engines.get('vllm') || 0
+      const sglangVal = engines.get('sglang') || 0
+      if (vllmVal > 0 && sglangVal > 0) return 'mixed'
+      if (vllmVal > 0) return 'vllm'
+      if (sglangVal > 0) return 'sglang'
+      return 'mixed'
+    }
+
+    // Build nodes
+    const nodes: SankeyNode[] = []
+
+    // Input nodes (column 0)
+    const inputOrder = ['single_stream', 'multi_stream', 'burst', 'serving', 'custom']
+    for (const id of inputOrder) {
+      if (inputValues.has(id)) {
+        nodes.push({
+          id: `in_${id}`,
+          label: SCENARIO_LABELS[id] || id,
+          column: 0,
+          color: '#6366f1', // indigo for input nodes
+          value: inputValues.get(id) || 0,
+        })
+      }
+    }
+
+    // Processing nodes (column 1)
+    const processOrder = ['Queue', 'Prefill', 'Decode', 'Post-processing']
+    const processColors: Record<string, string> = {
+      'Queue': '#94a3b8',
+      'Prefill': '#34d399',
+      'Decode': '#fbbf24',
+      'Post-processing': '#a78bfa',
+    }
+    for (const id of processOrder) {
+      if (processValues.has(id)) {
+        nodes.push({
+          id: `proc_${id}`,
+          label: id,
+          column: 1,
+          color: processColors[id] || '#94a3b8',
+          value: processValues.get(id) || 0,
+        })
+      }
+    }
+
+    // Output nodes (column 2)
+    const outputOrder = ['High Throughput', 'Low Latency', 'Balanced', 'High Memory']
+    const outputColors: Record<string, string> = {
+      'High Throughput': '#10b981',
+      'Low Latency': '#3b82f6',
+      'Balanced': '#f59e0b',
+      'High Memory': '#ef4444',
+    }
+    for (const id of outputOrder) {
+      if (outputValues.has(id)) {
+        nodes.push({
+          id: `out_${id}`,
+          label: id,
+          column: 2,
+          color: outputColors[id] || '#94a3b8',
+          value: outputValues.get(id) || 0,
+        })
+      }
+    }
+
+    // Build links
+    const links: SankeyLink[] = []
+
+    for (const [key, data] of inputToProcess.entries()) {
+      const [sourceScenario, targetStage] = key.split('→')
+      const dominantEngine = getDominantEngine(data.engines)
+      links.push({
+        id: `link_${key}`,
+        source: `in_${sourceScenario}`,
+        target: `proc_${targetStage}`,
+        value: data.value,
+        color: getLinkColor(dominantEngine),
+        engine: dominantEngine,
+      })
+    }
+
+    for (const [key, data] of processToOutput.entries()) {
+      const [sourceStage, targetOutput] = key.split('→')
+      const dominantEngine = getDominantEngine(data.engines)
+      links.push({
+        id: `link_${key}`,
+        source: `proc_${sourceStage}`,
+        target: `out_${targetOutput}`,
+        value: data.value,
+        color: getLinkColor(dominantEngine),
+        engine: dominantEngine,
+      })
+    }
+
+    return { nodes, links }
+  }, [sankeyFiltered, sankeyFlowType])
+
+  // Sankey summary stats
+  const sankeySummary = useMemo(() => {
+    const { nodes, links } = sankeyData
+    if (nodes.length === 0) return null
+
+    // Total flow volume
+    const totalFlow = links.reduce((s, l) => s + l.value, 0)
+
+    // Dominant path: find the path with highest combined value
+    let bestPath = ''
+    let bestPathVal = 0
+    const inputToProcessLinks = links.filter((l) => l.source.startsWith('in_'))
+    const processToOutputLinks = links.filter((l) => l.target.startsWith('out_'))
+
+    for (const ip of inputToProcessLinks) {
+      for (const po of processToOutputLinks) {
+        if (ip.target === po.source) {
+          const pathVal = ip.value + po.value
+          if (pathVal > bestPathVal) {
+            bestPathVal = pathVal
+            const srcLabel = nodes.find((n) => n.id === ip.source)?.label || ip.source
+            const procLabel = nodes.find((n) => n.id === ip.target)?.label || ip.target
+            const outLabel = nodes.find((n) => n.id === po.target)?.label || po.target
+            bestPath = `${srcLabel} → ${procLabel} → ${outLabel}`
+          }
+        }
+      }
+    }
+
+    // Processing efficiency: ratio of useful work (Prefill+Decode) to total processing
+    const procNodes = nodes.filter((n) => n.column === 1)
+    const totalProcValue = procNodes.reduce((s, n) => s + n.value, 0)
+    const usefulValue = procNodes
+      .filter((n) => n.id === 'proc_Prefill' || n.id === 'proc_Decode')
+      .reduce((s, n) => s + n.value, 0)
+    const efficiency = totalProcValue > 0 ? (usefulValue / totalProcValue) * 100 : 0
+
+    // Bottleneck stage: processing node with highest value
+    const bottleneckNode = procNodes.length > 0
+      ? procNodes.reduce((max, n) => n.value > max.value ? n : max, procNodes[0])
+      : null
+
+    return {
+      totalFlow,
+      dominantPath: bestPath,
+      efficiency,
+      bottleneck: bottleneckNode?.label || 'N/A',
+    }
+  }, [sankeyData])
+
   // Sorted data for table
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
@@ -500,6 +1071,83 @@ export default function ReportsPage() {
       return sortDir === 'asc' ? aVal - bVal : bVal - aVal
     })
   }, [filtered, sortCol, sortDir])
+
+  // ─── Waterfall Data (depends on filtered) ──────────────────────────
+  const waterfallResult = useMemo(() => {
+    if (!waterfallResultId && filtered.length > 0) {
+      return filtered[0]
+    }
+    return filtered.find((r) => r.id === waterfallResultId) ?? filtered[0] ?? null
+  }, [waterfallResultId, filtered])
+
+  const waterfallData = useMemo(() => {
+    if (!waterfallResult) return []
+    return generateWaterfallData(waterfallResult)
+  }, [waterfallResult])
+
+  // Waterfall chart data in Recharts-friendly format (stacked horizontal bar)
+  const waterfallChartData = useMemo(() => {
+    if (waterfallData.length === 0) return []
+    return waterfallData.map((row) => {
+      const point: Record<string, string | number> = { label: row.label }
+      for (const stage of row.stages) {
+        point[`${stage.name}_start`] = stage.start
+        point[`${stage.name}_duration`] = stage.duration
+      }
+      point.totalMs = row.totalMs
+      return point
+    })
+  }, [waterfallData])
+
+  // Waterfall summary stats
+  const waterfallSummary = useMemo(() => {
+    if (waterfallData.length === 0) return null
+    const avgTotal = waterfallData.reduce((s, r) => s + r.totalMs, 0) / waterfallData.length
+    const totals = { queue: 0, tokenization: 0, prefill: 0, decode: 0, postProcessing: 0 }
+    for (const row of waterfallData) {
+      for (const stage of row.stages) {
+        const key = stage.name === 'Queue Wait' ? 'queue'
+          : stage.name === 'Tokenization' ? 'tokenization'
+          : stage.name === 'Prefill' ? 'prefill'
+          : stage.name === 'Decode' ? 'decode'
+          : 'postProcessing'
+        totals[key] += stage.duration
+      }
+    }
+    const n = waterfallData.length
+    const avgs = {
+      queue: totals.queue / n,
+      tokenization: totals.tokenization / n,
+      prefill: totals.prefill / n,
+      decode: totals.decode / n,
+      postProcessing: totals.postProcessing / n,
+    }
+    const totalAvg = avgs.queue + avgs.tokenization + avgs.prefill + avgs.decode + avgs.postProcessing
+    const pcts = {
+      queue: totalAvg > 0 ? (avgs.queue / totalAvg) * 100 : 0,
+      tokenization: totalAvg > 0 ? (avgs.tokenization / totalAvg) * 100 : 0,
+      prefill: totalAvg > 0 ? (avgs.prefill / totalAvg) * 100 : 0,
+      decode: totalAvg > 0 ? (avgs.decode / totalAvg) * 100 : 0,
+      postProcessing: totalAvg > 0 ? (avgs.postProcessing / totalAvg) * 100 : 0,
+    }
+    // Find hotspot (max percentage)
+    const entries = Object.entries(pcts) as [keyof typeof pcts, number][]
+    const hotspot = entries.reduce((max, [key, val]) => val > max[1] ? [key, val] as [keyof typeof pcts, number] : max, entries[0])
+    const hotspotLabel: Record<string, string> = {
+      queue: 'Queue Wait',
+      tokenization: 'Tokenization',
+      prefill: 'Prefill',
+      decode: 'Decode',
+      postProcessing: 'Post-processing',
+    }
+    return {
+      avgTotalMs: avgTotal,
+      avgQueuePct: pcts.queue,
+      avgPrefillPct: pcts.prefill,
+      avgDecodePct: pcts.decode,
+      hotspot: { key: hotspot[0], label: hotspotLabel[hotspot[0]], pct: hotspot[1] },
+    }
+  }, [waterfallData])
 
   // ─── Chart Data ───────────────────────────────────────────────
   const throughputComparisonData = useMemo(() => {
@@ -1296,6 +1944,7 @@ export default function ReportsPage() {
             <TabsTrigger value="scatter">Throughput vs Latency</TabsTrigger>
             <TabsTrigger value="ttft">TTFT & TPOT</TabsTrigger>
             <TabsTrigger value="waterfall">Waterfall</TabsTrigger>
+            <TabsTrigger value="sankey">Sankey</TabsTrigger>
             <TabsTrigger value="radar">Radar</TabsTrigger>
           </TabsList>
 
@@ -1411,6 +2060,111 @@ export default function ReportsPage() {
                   </>
                 ) : (
                   <div className="h-[400px] flex items-center justify-center text-muted-foreground text-sm">
+                    No data available for the selected filters.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ─── Sankey Diagram ──────────────────────────────────── */}
+          <TabsContent value="sankey">
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <GitBranch className="w-4 h-4" />
+                      Inference Flow Sankey
+                    </CardTitle>
+                    <CardDescription>Flow of inference requests through processing stages to output metrics</CardDescription>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Select value={sankeyEngineFilter} onValueChange={setSankeyEngineFilter}>
+                      <SelectTrigger className="w-[120px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Engines</SelectItem>
+                        <SelectItem value="vllm">VLLM</SelectItem>
+                        <SelectItem value="sglang">SGLang</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Select value={sankeyFlowType} onValueChange={setSankeyFlowType}>
+                      <SelectTrigger className="w-[160px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="volume">Request Volume</SelectItem>
+                        <SelectItem value="latency">Latency Distribution</SelectItem>
+                        <SelectItem value="throughput">Throughput Distribution</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {sankeyData.nodes.length > 0 ? (
+                  <>
+                    {/* ─── Summary Panel ──────────────────────────── */}
+                    {sankeySummary && (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+                        <div className="border rounded-lg p-3 text-center">
+                          <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Total Flow Volume</p>
+                          <p className="text-lg font-bold tabular-nums mt-1">
+                            {sankeyFlowType === 'volume'
+                              ? sankeySummary.totalFlow.toLocaleString(undefined, { maximumFractionDigits: 0 })
+                              : sankeyFlowType === 'latency'
+                                ? `${sankeySummary.totalFlow.toLocaleString(undefined, { maximumFractionDigits: 0 })} ms`
+                                : `${sankeySummary.totalFlow.toLocaleString(undefined, { maximumFractionDigits: 0 })} tok/s`}
+                          </p>
+                        </div>
+                        <div className="border rounded-lg p-3 text-center">
+                          <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Dominant Path</p>
+                          <p className="text-xs font-semibold mt-1 leading-tight">{sankeySummary.dominantPath || 'N/A'}</p>
+                        </div>
+                        <div className="border rounded-lg p-3 text-center">
+                          <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Processing Efficiency</p>
+                          <p className="text-lg font-bold tabular-nums mt-1 text-emerald-600">{sankeySummary.efficiency.toFixed(1)}%</p>
+                        </div>
+                        <div className="border rounded-lg p-3 text-center">
+                          <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Bottleneck Stage</p>
+                          <Badge className="bg-amber-100 text-amber-700 border-0 text-[10px] font-bold mt-1">
+                            <AlertCircle className="w-3 h-3 mr-0.5" />
+                            {sankeySummary.bottleneck}
+                          </Badge>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ─── Sankey SVG ─────────────────────────────── */}
+                    <SankeyDiagram
+                      nodes={sankeyData.nodes}
+                      links={sankeyData.links}
+                      hoveredLink={sankeyHoveredLink}
+                      onHoverLink={setSankeyHoveredLink}
+                      flowType={sankeyFlowType}
+                    />
+
+                    {/* ─── Legend ─────────────────────────────────── */}
+                    <div className="flex items-center justify-center gap-4 mt-3 flex-wrap">
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-3 h-3 rounded-[2px]" style={{ backgroundColor: VLLM_COLOR }} />
+                        <span className="text-xs text-muted-foreground">VLLM</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-3 h-3 rounded-[2px]" style={{ backgroundColor: SGLANG_COLOR }} />
+                        <span className="text-xs text-muted-foreground">SGLang</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-3 h-3 rounded-[2px]" style={{ backgroundColor: MIXED_COLOR }} />
+                        <span className="text-xs text-muted-foreground">Mixed</span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="h-[400px] flex flex-col items-center justify-center text-muted-foreground text-sm">
+                    <GitBranch className="size-10 mb-3 opacity-30" />
                     No data available for the selected filters.
                   </div>
                 )}

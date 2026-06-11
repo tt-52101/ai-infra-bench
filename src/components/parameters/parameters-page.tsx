@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo, useCallback } from 'react'
+import React, { useState, useMemo, useCallback, Fragment } from 'react'
 import { toast } from 'sonner'
 import {
   SlidersHorizontal,
@@ -23,8 +23,11 @@ import {
   AlertCircle,
   TrendingUp,
   Activity,
+  GitCompare,
+  Check,
+  Crown,
 } from 'lucide-react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   AreaChart,
   Area,
@@ -492,6 +495,9 @@ export default function ParametersPage() {
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [sensitivityParam, setSensitivityParam] = useState<keyof typeof SENSITIVITY_PARAM_CONFIG>('maxNumSeqs')
+  const [compareDialogOpen, setCompareDialogOpen] = useState(false)
+  const [compareProfileAId, setCompareProfileAId] = useState<string>('')
+  const [compareProfileBId, setCompareProfileBId] = useState<string>('')
 
   // Null-safe lists from API data
   const savedProfiles = profiles ?? []
@@ -750,6 +756,10 @@ export default function ParametersPage() {
                 <Button variant="outline" size="sm" onClick={importPresets} disabled={isLoading}>
                   <Download className="size-4" />
                   {t('parameters.importPresets')}
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setCompareDialogOpen(true)} disabled={savedProfiles.length < 2}>
+                  <GitCompare className="size-4" />
+                  Compare Profiles
                 </Button>
                 <Button size="sm" onClick={() => {
                   setEditingProfileId(null)
@@ -1630,7 +1640,342 @@ export default function ParametersPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* ── Compare Profiles Dialog ── */}
+        <CompareProfilesDialog
+          open={compareDialogOpen}
+          onOpenChange={setCompareDialogOpen}
+          profiles={savedProfiles}
+          profileAId={compareProfileAId}
+          profileBId={compareProfileBId}
+          onProfileAChange={setCompareProfileAId}
+          onProfileBChange={setCompareProfileBId}
+        />
       </div>
     </TooltipProvider>
+  )
+}
+
+// ─── Parameter Diff Configuration ────────────────────────────────────────────
+type ParamDef = {
+  key: keyof ParameterValues
+  label: string
+  category: string
+  // For numeric params: higherIsBetter means a higher value is considered "better"
+  // For boolean params: trueIsBetter means true is considered "better"
+  higherIsBetter?: boolean
+  trueIsBetter?: boolean
+  isBoolean?: boolean
+  format?: (v: number | boolean | string) => string
+}
+
+const PARAM_DIFF_DEFS: ParamDef[] = [
+  // Memory & Capacity
+  { key: 'maxModelLen', label: 'Max Model Length', category: 'Memory & Capacity', higherIsBetter: true, format: (v) => `${v} tokens` },
+  { key: 'gpuMemoryUtil', label: 'GPU Memory Util', category: 'Memory & Capacity', higherIsBetter: true, format: (v) => `${(v as number).toFixed(2)}` },
+  { key: 'swapSpace', label: 'Swap Space', category: 'Memory & Capacity', format: (v) => `${v} GB` },
+  { key: 'blockSize', label: 'Block Size', category: 'Memory & Capacity', format: (v) => `${v}` },
+  // Batch & Concurrency
+  { key: 'maxNumSeqs', label: 'Max Num Sequences', category: 'Batch & Concurrency', higherIsBetter: true },
+  { key: 'maxNumBatchedTokens', label: 'Max Batched Tokens', category: 'Batch & Concurrency', higherIsBetter: true, format: (v) => `${v} tokens` },
+  { key: 'chunkPrefillSize', label: 'Chunk Prefill Size', category: 'Batch & Concurrency', higherIsBetter: true, format: (v) => `${v} tokens` },
+  // Optimization Flags
+  { key: 'enforceEager', label: 'Enforce Eager', category: 'Optimization', isBoolean: true },
+  { key: 'enablePrefixCaching', label: 'Prefix Caching', category: 'Optimization', isBoolean: true, trueIsBetter: true },
+  { key: 'enableChunkedPrefill', label: 'Chunked Prefill', category: 'Optimization', isBoolean: true, trueIsBetter: true },
+  { key: 'quantization', label: 'Quantization', category: 'Optimization', format: (v) => `${v}` },
+  { key: 'memFractionStatic', label: 'Mem Fraction Static', category: 'Optimization', format: (v) => `${(v as number).toFixed(2)}` },
+  // Sampling
+  { key: 'temperature', label: 'Temperature', category: 'Sampling', format: (v) => `${(v as number).toFixed(1)}` },
+  { key: 'topP', label: 'Top P', category: 'Sampling', format: (v) => `${(v as number).toFixed(2)}` },
+  { key: 'topK', label: 'Top K', category: 'Sampling' },
+  { key: 'repetitionPenalty', label: 'Repetition Penalty', category: 'Sampling', format: (v) => `${(v as number).toFixed(2)}` },
+]
+
+function determineWinner(
+  param: ParamDef,
+  valueA: number | boolean | string,
+  valueB: number | boolean | string,
+): 'a' | 'b' | 'tie' {
+  if (param.isBoolean) {
+    if (valueA === valueB) return 'tie'
+    if (param.trueIsBetter) return valueA ? 'a' : 'b'
+    return valueA ? 'b' : 'a'
+  }
+  const a = valueA as number
+  const b = valueB as number
+  if (a === b) return 'tie'
+  if (param.higherIsBetter) return a > b ? 'a' : 'b'
+  // For params where lower is better (like swapSpace), the one with less is preferred
+  // But for swapSpace, it depends on context - so we default to "tie" for ambiguous ones
+  return 'tie'
+}
+
+// ─── Compare Profiles Dialog Component ───────────────────────────────────────
+function CompareProfilesDialog({
+  open,
+  onOpenChange,
+  profiles,
+  profileAId,
+  profileBId,
+  onProfileAChange,
+  onProfileBChange,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  profiles: ParameterProfileInfo[]
+  profileAId: string
+  profileBId: string
+  onProfileAChange: (id: string) => void
+  onProfileBChange: (id: string) => void
+}) {
+  const profileA = useMemo(() => profiles.find((p) => p.id === profileAId) ?? null, [profiles, profileAId])
+  const profileB = useMemo(() => profiles.find((p) => p.id === profileBId) ?? null, [profiles, profileBId])
+
+  // Build diff rows grouped by category
+  const categories = useMemo(() => {
+    const catMap = new Map<string, ParamDef[]>()
+    for (const def of PARAM_DIFF_DEFS) {
+      const items = catMap.get(def.category) ?? []
+      items.push(def)
+      catMap.set(def.category, items)
+    }
+    return Array.from(catMap.entries())
+  }, [])
+
+  // Compute diff summary: how many params does each profile win?
+  const diffSummary = useMemo(() => {
+    if (!profileA || !profileB) return { aWins: 0, bWins: 0, ties: 0, total: 0 }
+    let aWins = 0
+    let bWins = 0
+    let ties = 0
+    let total = 0
+    for (const def of PARAM_DIFF_DEFS) {
+      const valueA = profileA[def.key]
+      const valueB = profileB[def.key]
+      if (valueA === undefined && valueB === undefined) continue
+      total++
+      const winner = determineWinner(def, valueA, valueB)
+      if (winner === 'a') aWins++
+      else if (winner === 'b') bWins++
+      else ties++
+    }
+    return { aWins, bWins, ties, total }
+  }, [profileA, profileB])
+
+  const bothSelected = profileA && profileB
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <GitCompare className="size-5 text-emerald-600" />
+            Compare Profiles
+          </DialogTitle>
+          <DialogDescription>
+            Select two profiles to compare their parameter values side by side. Differences are highlighted with recommendations.
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Profile Selectors */}
+        <div className="grid grid-cols-2 gap-4 py-2">
+          <div className="space-y-2">
+            <Label className="text-sm font-medium text-emerald-600 dark:text-emerald-400">Profile A</Label>
+            <Select value={profileAId} onValueChange={(v) => onProfileAChange(v)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select profile..." />
+              </SelectTrigger>
+              <SelectContent>
+                {profiles.filter((p) => p.id !== profileBId).map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    <span className="flex items-center gap-2">
+                      {p.name}
+                      <span className="text-[10px] text-muted-foreground">({p.engine.toUpperCase()})</span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {profileA && (
+              <div className="text-xs text-muted-foreground bg-emerald-50 dark:bg-emerald-950/30 rounded px-2 py-1">
+                {profileA.description || 'No description'}
+              </div>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label className="text-sm font-medium text-amber-600 dark:text-amber-400">Profile B</Label>
+            <Select value={profileBId} onValueChange={(v) => onProfileBChange(v)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select profile..." />
+              </SelectTrigger>
+              <SelectContent>
+                {profiles.filter((p) => p.id !== profileAId).map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    <span className="flex items-center gap-2">
+                      {p.name}
+                      <span className="text-[10px] text-muted-foreground">({p.engine.toUpperCase()})</span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {profileB && (
+              <div className="text-xs text-muted-foreground bg-amber-50 dark:bg-amber-950/30 rounded px-2 py-1">
+                {profileB.description || 'No description'}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <Separator />
+
+        {/* Comparison Table */}
+        {bothSelected ? (
+          <ScrollArea className="flex-1 -mx-6 px-6">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={`${profileAId}-${profileBId}`}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3, ease: 'easeOut' }}
+                className="space-y-4"
+              >
+                {categories.map(([category, params]) => (
+                  <div key={category}>
+                    <h4 className="text-sm font-semibold text-muted-foreground mb-2">{category}</h4>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[180px]">Parameter</TableHead>
+                          <TableHead className="text-center">
+                            <span className="text-emerald-600 dark:text-emerald-400">{profileA.name}</span>
+                          </TableHead>
+                          <TableHead className="text-center">
+                            <span className="text-amber-600 dark:text-amber-400">{profileB.name}</span>
+                          </TableHead>
+                          <TableHead className="w-[100px] text-center">Recommendation</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {params.map((def) => {
+                          const valueA = profileA[def.key]
+                          const valueB = profileB[def.key]
+                          const isDifferent = valueA !== valueB
+                          const winner = determineWinner(def, valueA, valueB)
+
+                          const formatVal = (v: number | boolean | string) => {
+                            if (def.isBoolean) return v ? 'Enabled' : 'Disabled'
+                            if (def.format) return def.format(v)
+                            return String(v)
+                          }
+
+                          return (
+                            <TableRow key={def.key} className={isDifferent ? '' : 'opacity-60'}>
+                              <TableCell className="font-medium text-sm">{def.label}</TableCell>
+                              <TableCell className={cn(
+                                'text-center text-sm font-mono',
+                                isDifferent && winner === 'a' && 'bg-emerald-50 dark:bg-emerald-950/30'
+                              )}>
+                                <div className="flex items-center justify-center gap-1.5">
+                                  {formatVal(valueA)}
+                                  {isDifferent && winner === 'a' && (
+                                    <Crown className="size-3 text-emerald-500" />
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className={cn(
+                                'text-center text-sm font-mono',
+                                isDifferent && winner === 'b' && 'bg-amber-50 dark:bg-amber-950/30'
+                              )}>
+                                <div className="flex items-center justify-center gap-1.5">
+                                  {formatVal(valueB)}
+                                  {isDifferent && winner === 'b' && (
+                                    <Crown className="size-3 text-amber-500" />
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {!isDifferent && (
+                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                    Same
+                                  </Badge>
+                                )}
+                                {isDifferent && winner === 'a' && (
+                                  <Badge className="text-[10px] px-1.5 py-0 bg-emerald-600 hover:bg-emerald-700 text-white">
+                                    A Better
+                                  </Badge>
+                                )}
+                                {isDifferent && winner === 'b' && (
+                                  <Badge className="text-[10px] px-1.5 py-0 bg-amber-500 hover:bg-amber-600 text-white">
+                                    B Better
+                                  </Badge>
+                                )}
+                                {isDifferent && winner === 'tie' && (
+                                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                                    Context
+                                  </Badge>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ))}
+
+                {/* Summary */}
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.2, duration: 0.3 }}
+                >
+                  <Card className="border-dashed">
+                    <CardContent className="py-4">
+                      <div className="flex items-center justify-center gap-6 text-sm">
+                        <div className="flex items-center gap-2">
+                          <div className="h-3 w-3 rounded-full bg-emerald-500" />
+                          <span>
+                            <strong className="text-emerald-600 dark:text-emerald-400">{profileA.name}</strong> is better for{' '}
+                            <strong>{diffSummary.aWins}</strong> parameter{diffSummary.aWins !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+                        <Separator orientation="vertical" className="h-4" />
+                        <div className="flex items-center gap-2">
+                          <div className="h-3 w-3 rounded-full bg-amber-500" />
+                          <span>
+                            <strong className="text-amber-600 dark:text-amber-400">{profileB.name}</strong> is better for{' '}
+                            <strong>{diffSummary.bWins}</strong> parameter{diffSummary.bWins !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+                        <Separator orientation="vertical" className="h-4" />
+                        <div className="flex items-center gap-2">
+                          <div className="h-3 w-3 rounded-full bg-muted-foreground/30" />
+                          <span>
+                            <strong>{diffSummary.ties}</strong> same / contextual
+                          </span>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              </motion.div>
+            </AnimatePresence>
+          </ScrollArea>
+        ) : (
+          <div className="flex-1 flex items-center justify-center py-12">
+            <div className="text-center">
+              <GitCompare className="size-10 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-muted-foreground text-sm">Select two profiles to compare</p>
+              <p className="text-muted-foreground text-xs mt-1">
+                Choose one profile for each column above to see the diff
+              </p>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }

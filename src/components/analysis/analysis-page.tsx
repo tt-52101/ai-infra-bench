@@ -19,16 +19,19 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Slider } from '@/components/ui/slider'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
 import {
   TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, BarChart3,
   Cpu, HardDrive, Zap, Clock, ArrowUp, ArrowDown, Search, Download,
   RefreshCw, Plus, Trash2, Eye, Activity, Target, Gauge, Loader2,
   Flame, Lightbulb, ShieldAlert, Scale, Sparkles, ArrowRight,
-  Grid3X3, Tornado, Info, Thermometer,
+  Grid3X3, Tornado, Info, Thermometer, Layers, Filter,
 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { toast } from 'sonner'
-import { useAnalyses, useModels, useBenchmarks, useResults } from '@/hooks/use-api'
+import { useAnalyses, useModels, useResults } from '@/hooks/use-api'
 import { useI18n } from '@/hooks/use-i18n'
 import type { EngineType, ModelInfo } from '@/lib/types'
 import { EnhancedAnalysisTooltip, useChartHighlight, HighlightCard } from '@/components/ui/enhanced-chart-tooltip'
@@ -724,6 +727,170 @@ function getSensitivityLevel(score: number): 'Very Low' | 'Low' | 'Medium' | 'Hi
   return 'Very High'
 }
 
+// ─── Flame Chart Data ─────────────────────────────────────────────
+interface FlameChartStage {
+  name: string
+  color: string
+  startMs: number
+  durationMs: number
+}
+
+interface FlameChartRequest {
+  id: number
+  stages: FlameChartStage[]
+  totalMs: number
+}
+
+interface FlameChartSummary {
+  totalProcessingTime: number
+  avgStageBreakdown: Record<string, number>
+  bottleneck: string
+  bottleneckAvgMs: number
+  requestCount: number
+}
+
+const FLAME_STAGE_COLORS: Record<string, string> = {
+  Queue: 'bg-slate-500',
+  Tokenization: 'bg-sky-500',
+  Prefill: 'bg-emerald-500',
+  Decode: 'bg-amber-500',
+  'Post-processing': 'bg-violet-500',
+}
+
+function seededRandom(seed: number): () => number {
+  let s = seed
+  return () => {
+    s = (s * 16807 + 0) % 2147483647
+    return (s - 1) / 2147483646
+  }
+}
+
+function hashString(str: string): number {
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i)
+    hash = ((hash << 5) - hash) + char
+    hash |= 0
+  }
+  return Math.abs(hash)
+}
+
+function generateFlameChartData(
+  modelName: string,
+  engine: EngineType | 'both',
+  concurrency: number,
+): FlameChartRequest[] {
+  const seed = hashString(modelName + engine) + concurrency * 1000
+  const rand = seededRandom(seed)
+
+  const stageNames = ['Queue', 'Tokenization', 'Prefill', 'Decode', 'Post-processing']
+
+  // Base durations per model (in ms) for each stage
+  const baseDurations: Record<string, Record<string, number>> = {
+    'Qwen2.5-72B': { Queue: 15, Tokenization: 8, Prefill: 45, Decode: 120, 'Post-processing': 12 },
+    'Llama-3.1-70B': { Queue: 12, Tokenization: 7, Prefill: 40, Decode: 110, 'Post-processing': 10 },
+    'DeepSeek-V2': { Queue: 18, Tokenization: 10, Prefill: 55, Decode: 140, 'Post-processing': 15 },
+    'Mistral-7B': { Queue: 5, Tokenization: 3, Prefill: 15, Decode: 40, 'Post-processing': 5 },
+    'Yi-1.5-34B': { Queue: 10, Tokenization: 6, Prefill: 30, Decode: 80, 'Post-processing': 8 },
+  }
+
+  const modelBases = baseDurations[modelName] ?? baseDurations['Llama-3.1-70B']!
+  const engineFactor = engine === 'sglang' ? 0.88 : engine === 'vllm' ? 1.0 : 0.94
+
+  const requests: FlameChartRequest[] = []
+  const numRequests = Math.min(Math.max(concurrency, 5), 15)
+
+  for (let i = 0; i < numRequests; i++) {
+    const stages: FlameChartStage[] = []
+    let currentTime = 0
+
+    // Stagger start times to show concurrency
+    currentTime = Math.round(rand() * 30 * (concurrency / 8))
+
+    for (const stageName of stageNames) {
+      const baseDuration = modelBases[stageName] ?? 20
+      // Scale duration with concurrency
+      const concurrencyScale = 1 + (concurrency - 1) * 0.02
+      // Queue time scales more with higher concurrency
+      const queueScale = stageName === 'Queue' ? (1 + (concurrency - 1) * 0.08) : 1
+      // Decode time scales slightly with concurrency (batching)
+      const decodeScale = stageName === 'Decode' ? (1 + (concurrency - 1) * 0.03) : 1
+
+      const duration = Math.round(
+        baseDuration * engineFactor * concurrencyScale * queueScale * decodeScale * (0.85 + rand() * 0.3)
+      )
+
+      stages.push({
+        name: stageName,
+        color: FLAME_STAGE_COLORS[stageName]!,
+        startMs: currentTime,
+        durationMs: Math.max(duration, 2),
+      })
+
+      currentTime += duration
+    }
+
+    requests.push({
+      id: i + 1,
+      stages,
+      totalMs: currentTime,
+    })
+  }
+
+  // Sort by start time
+  requests.sort((a, b) => a.stages[0]!.startMs - b.stages[0]!.startMs)
+
+  return requests
+}
+
+function computeFlameSummary(requests: FlameChartRequest[]): FlameChartSummary {
+  if (requests.length === 0) {
+    return { totalProcessingTime: 0, avgStageBreakdown: {}, bottleneck: 'N/A', bottleneckAvgMs: 0, requestCount: 0 }
+  }
+
+  const stageTotals: Record<string, number> = {}
+  const stageCounts: Record<string, number> = {}
+  const stageNames = ['Queue', 'Tokenization', 'Prefill', 'Decode', 'Post-processing']
+
+  for (const name of stageNames) {
+    stageTotals[name] = 0
+    stageCounts[name] = 0
+  }
+
+  let maxEndTime = 0
+
+  for (const req of requests) {
+    for (const stage of req.stages) {
+      stageTotals[stage.name] = (stageTotals[stage.name] ?? 0) + stage.durationMs
+      stageCounts[stage.name] = (stageCounts[stage.name] ?? 0) + 1
+      const endTime = stage.startMs + stage.durationMs
+      if (endTime > maxEndTime) maxEndTime = endTime
+    }
+  }
+
+  const avgStageBreakdown: Record<string, number> = {}
+  let maxAvg = 0
+  let bottleneck = ''
+
+  for (const name of stageNames) {
+    const count = stageCounts[name] ?? 1
+    const avg = Math.round((stageTotals[name] ?? 0) / count)
+    avgStageBreakdown[name] = avg
+    if (avg > maxAvg) {
+      maxAvg = avg
+      bottleneck = name
+    }
+  }
+
+  return {
+    totalProcessingTime: maxEndTime,
+    avgStageBreakdown,
+    bottleneck,
+    bottleneckAvgMs: maxAvg,
+    requestCount: requests.length,
+  }
+}
+
 // ─── Main Component ──────────────────────────────────────────────
 export default function AnalysisPage() {
   const [selectedDimension, setSelectedDimension] = useState('concurrency_throughput')
@@ -755,6 +922,12 @@ export default function AnalysisPage() {
   const [heatmapEngine, setHeatmapEngine] = useState<EngineType | 'both'>('both')
   const sensitivityMatrix = useMemo(() => generateSensitivityMatrix(heatmapEngine), [heatmapEngine])
   const [sensitivityHovered, setSensitivityHovered] = useState<{ param: string; metric: string } | null>(null)
+
+  // Flame chart state
+  const [flameConcurrency, setFlameConcurrency] = useState(8)
+  const [flameZoom, setFlameZoom] = useState(1)
+  const [showBottlenecksOnly, setShowBottlenecksOnly] = useState(false)
+  const [flameHoveredStage, setFlameHoveredStage] = useState<{ requestId: number; stageName: string } | null>(null)
 
   // API hooks
   const { data: analyses, loading: analysesLoading, addAnalysis, removeAnalysis } = useAnalyses()
@@ -877,6 +1050,27 @@ export default function AnalysisPage() {
     // Sort by score descending, take top 3
     return pairs.sort((a, b) => b.score - a.score).slice(0, 3)
   }, [sensitivityMatrix])
+
+  // ─── Flame Chart Data ─────────────────────────────────────────
+  const flameData = useMemo(() => {
+    if (!selectedModel) return []
+    return generateFlameChartData(selectedModel, selectedEngine, flameConcurrency)
+  }, [selectedModel, selectedEngine, flameConcurrency])
+
+  const flameSummary = useMemo(() => computeFlameSummary(flameData), [flameData])
+
+  const flameMaxTime = useMemo(() => {
+    if (flameData.length === 0) return 100
+    return Math.max(...flameData.map((r) => r.totalMs))
+  }, [flameData])
+
+  const filteredFlameData = useMemo(() => {
+    if (!showBottlenecksOnly || !flameSummary.bottleneck) return flameData
+    const bottleneck = flameSummary.bottleneck
+    return flameData.filter((req) =>
+      req.stages.some((s) => s.name === bottleneck && s.durationMs > flameSummary.bottleneckAvgMs * 0.8)
+    )
+  }, [flameData, showBottlenecksOnly, flameSummary])
 
   // ─── Risk color ───────────────────────────────────────────────
   const riskColor = { Low: 'text-emerald-600', Medium: 'text-amber-600', High: 'text-red-600' }
@@ -1081,6 +1275,10 @@ export default function AnalysisPage() {
           <TabsTrigger value="sensitivity-heatmap" className="gap-1.5">
             <Thermometer className="w-4 h-4" />
             Sensitivity Heatmap
+          </TabsTrigger>
+          <TabsTrigger value="flame-chart" className="gap-1.5">
+            <Flame className="w-4 h-4" />
+            Flame Chart
           </TabsTrigger>
         </TabsList>
 
@@ -2132,6 +2330,299 @@ export default function AnalysisPage() {
                       {heatmapEngine === 'vllm' && ' Current view shows VLLM-specific sensitivity scores.'}
                       {heatmapEngine === 'sglang' && ' Current view shows SGLang-specific sensitivity scores.'}
                       {' '}Use the engine toggle above to compare how sensitivity differs between inference engines.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        </TabsContent>
+
+        {/* ═══════════════════════════════════════════════════════
+            TAB 6: Flame Chart
+            ═══════════════════════════════════════════════════════ */}
+        <TabsContent value="flame-chart" className="space-y-4">
+          {/* ─── Summary Panel ──────────────────────────────────── */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Clock className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">Total Processing Time</span>
+                  </div>
+                  <p className="text-xl font-bold">{flameSummary.totalProcessingTime > 0 ? `${flameSummary.totalProcessingTime}ms` : 'N/A'}</p>
+                </CardContent>
+              </Card>
+            </motion.div>
+            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.05 }}>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Activity className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">Concurrent Requests</span>
+                  </div>
+                  <p className="text-xl font-bold">{flameSummary.requestCount}</p>
+                </CardContent>
+              </Card>
+            </motion.div>
+            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.1 }}>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <AlertTriangle className="w-4 h-4 text-amber-500" />
+                    <span className="text-xs text-muted-foreground">Bottleneck</span>
+                  </div>
+                  <p className="text-xl font-bold">{flameSummary.bottleneck || 'N/A'}</p>
+                  {flameSummary.bottleneckAvgMs > 0 && (
+                    <p className="text-xs text-muted-foreground">avg {flameSummary.bottleneckAvgMs}ms</p>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.15 }}>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Layers className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">Avg Stage Breakdown</span>
+                  </div>
+                  <div className="space-y-0.5 mt-1">
+                    {Object.entries(flameSummary.avgStageBreakdown).map(([name, avg]) => (
+                      <div key={name} className="flex items-center gap-1.5">
+                        <div className={`w-2 h-2 rounded-sm ${FLAME_STAGE_COLORS[name]}`} />
+                        <span className="text-[10px] text-muted-foreground">{name}: {avg}ms</span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          </div>
+
+          {/* ─── Controls ──────────────────────────────────────── */}
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                <div className="flex items-center gap-3 min-w-[200px]">
+                  <Label className="text-xs whitespace-nowrap">Concurrency</Label>
+                  <Slider
+                    value={[flameConcurrency]}
+                    onValueChange={(v) => setFlameConcurrency(v[0]!)}
+                    min={1}
+                    max={32}
+                    step={1}
+                    className="w-28"
+                  />
+                  <span className="text-sm font-mono w-8 text-right">{flameConcurrency}</span>
+                </div>
+                <div className="flex items-center gap-3 min-w-[200px]">
+                  <Label className="text-xs whitespace-nowrap">Time Zoom</Label>
+                  <Slider
+                    value={[flameZoom]}
+                    onValueChange={(v) => setFlameZoom(v[0]!)}
+                    min={0.5}
+                    max={3}
+                    step={0.1}
+                    className="w-28"
+                  />
+                  <span className="text-sm font-mono w-10 text-right">{flameZoom.toFixed(1)}x</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="bottleneck-toggle"
+                    checked={showBottlenecksOnly}
+                    onCheckedChange={setShowBottlenecksOnly}
+                  />
+                  <Label htmlFor="bottleneck-toggle" className="text-xs flex items-center gap-1 cursor-pointer">
+                    <Filter className="w-3 h-3" />
+                    Show Bottlenecks Only
+                  </Label>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* ─── Flame Chart Visualization ─────────────────────── */}
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Flame className="w-5 h-5 text-orange-500" />
+                  Execution Timeline
+                </CardTitle>
+                <div className="flex items-center gap-3">
+                  {Object.entries(FLAME_STAGE_COLORS).map(([name, colorClass]) => (
+                    <div key={name} className="flex items-center gap-1">
+                      <div className={`w-2.5 h-2.5 rounded-sm ${colorClass}`} />
+                      <span className="text-[10px] text-muted-foreground">{name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-4 pt-0">
+              {filteredFlameData.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                  <Flame className="w-10 h-10 mb-2 opacity-30" />
+                  <p className="text-sm">No data available. Select a model to view flame chart.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  {/* Time axis */}
+                  <div className="relative" style={{ minWidth: `${Math.max(flameMaxTime * flameZoom * 2.5, 600)}px` }}>
+                    <div className="flex items-center h-6 border-b border-border mb-1 text-[10px] text-muted-foreground">
+                      {Array.from({ length: Math.ceil(flameMaxTime / 50) + 1 }, (_, i) => {
+                        const timeMs = i * 50
+                        if (timeMs > flameMaxTime * 1.1) return null
+                        return (
+                          <div
+                            key={i}
+                            className="absolute"
+                            style={{ left: `${(timeMs / flameMaxTime) * 100}%` }}
+                          >
+                            {timeMs}ms
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    {/* Request rows */}
+                    <div className="space-y-1">
+                      {filteredFlameData.map((req, reqIdx) => (
+                        <motion.div
+                          key={req.id}
+                          className="flex items-center gap-2 h-8"
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ duration: 0.4, delay: reqIdx * 0.05 }}
+                        >
+                          <span className="text-[10px] text-muted-foreground w-8 shrink-0 text-right font-mono">
+                            R{req.id}
+                          </span>
+                          <div className="relative flex-1 h-6 bg-muted/30 rounded-sm">
+                            {req.stages.map((stage, stageIdx) => {
+                              const leftPct = (stage.startMs / flameMaxTime) * 100
+                              const widthPct = (stage.durationMs / flameMaxTime) * 100
+                              const isHovered = flameHoveredStage?.requestId === req.id && flameHoveredStage?.stageName === stage.name
+                              const isBottleneck = flameSummary.bottleneck === stage.name
+
+                              return (
+                                <Tooltip key={stageIdx}>
+                                  <TooltipTrigger asChild>
+                                    <motion.div
+                                      className={`absolute top-0 h-full rounded-sm cursor-pointer transition-opacity ${stage.color} ${
+                                        isHovered ? 'opacity-100 ring-2 ring-foreground/30' : 'opacity-85'
+                                      } ${showBottlenecksOnly && isBottleneck ? 'ring-1 ring-amber-400' : ''}`}
+                                      style={{
+                                        left: `${leftPct}%`,
+                                        width: `${Math.max(widthPct, 0.5)}%`,
+                                      }}
+                                      initial={{ scaleX: 0, transformOrigin: 'left' }}
+                                      animate={{ scaleX: 1 }}
+                                      transition={{ duration: 0.5, delay: reqIdx * 0.05 + stageIdx * 0.05, ease: 'easeOut' }}
+                                      onMouseEnter={() => setFlameHoveredStage({ requestId: req.id, stageName: stage.name })}
+                                      onMouseLeave={() => setFlameHoveredStage(null)}
+                                    />
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" className="text-xs">
+                                    <div className="space-y-1">
+                                      <p className="font-semibold">{stage.name}</p>
+                                      <p>Duration: {stage.durationMs}ms</p>
+                                      <p>Start: {stage.startMs}ms</p>
+                                      <p>End: {stage.startMs + stage.durationMs}ms</p>
+                                      {isBottleneck && (
+                                        <p className="text-amber-500 flex items-center gap-1">
+                                          <AlertTriangle className="w-3 h-3" /> Bottleneck
+                                        </p>
+                                      )}
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
+                              )
+                            })}
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* ─── Stage Breakdown Bar ───────────────────────────── */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Avg Stage Duration Breakdown</CardTitle>
+              <CardDescription>Average time spent in each processing stage across all requests</CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 pt-0">
+              {flameSummary.totalProcessingTime > 0 ? (
+                <div className="space-y-3">
+                  {Object.entries(flameSummary.avgStageBreakdown).map(([name, avgMs], idx) => {
+                    const totalAvg = Object.values(flameSummary.avgStageBreakdown).reduce((a, b) => a + b, 0)
+                    const pct = totalAvg > 0 ? (avgMs / totalAvg) * 100 : 0
+                    const isBottleneck = flameSummary.bottleneck === name
+                    return (
+                      <motion.div
+                        key={name}
+                        className="space-y-1"
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.3, delay: idx * 0.05 }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className={`w-3 h-3 rounded-sm ${FLAME_STAGE_COLORS[name]}`} />
+                            <span className="text-sm font-medium">{name}</span>
+                            {isBottleneck && (
+                              <Badge variant="outline" className="text-[10px] border-amber-400 text-amber-600">
+                                Bottleneck
+                              </Badge>
+                            )}
+                          </div>
+                          <span className="text-sm text-muted-foreground">{avgMs}ms ({pct.toFixed(1)}%)</span>
+                        </div>
+                        <div className="h-2 bg-muted/50 rounded-full overflow-hidden">
+                          <motion.div
+                            className={`h-full rounded-full ${FLAME_STAGE_COLORS[name]}`}
+                            initial={{ width: 0 }}
+                            animate={{ width: `${pct}%` }}
+                            transition={{ duration: 0.6, delay: 0.3 + idx * 0.08, ease: 'easeOut' }}
+                          />
+                        </div>
+                      </motion.div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">No data available</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* ─── Engine Comparison Note ──────────────────────────── */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.3 }}
+          >
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <Info className="w-5 h-5 text-sky-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium mb-1">About Flame Chart</p>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      The flame chart visualizes the execution timeline of concurrent inference requests.
+                      Each row represents a request (R1, R2, ...), and colored bars show time spent in each processing stage.
+                      The horizontal axis shows time in milliseconds. Use the Concurrency slider to simulate different load levels,
+                      and the Time Zoom slider to adjust the horizontal scale. Toggle &quot;Show Bottlenecks Only&quot; to highlight
+                      requests where the bottleneck stage ({flameSummary.bottleneck || 'N/A'}) exceeds the average duration.
+                      {selectedEngine === 'both' && ' Current view uses averaged data across both engines.'}
+                      {selectedEngine === 'vllm' && ' Current view shows VLLM-specific timing.'}
+                      {selectedEngine === 'sglang' && ' Current view shows SGLang-specific timing (typically ~12% faster decode).'}
                     </p>
                   </div>
                 </div>

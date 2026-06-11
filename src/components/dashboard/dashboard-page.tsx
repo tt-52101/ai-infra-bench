@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react'
-import { Box, Play, Zap, Clock, ArrowRight, Plus, SlidersHorizontal, Server, HardDrive, Wifi, XCircle, Award, ArrowUpRight, ArrowDownRight, Thermometer, Cpu, Check, BarChart3, AlertTriangle, ChevronDown, ChevronUp, Trophy, Crown } from 'lucide-react'
+import { Box, Play, Zap, Clock, ArrowRight, Plus, SlidersHorizontal, Server, HardDrive, Wifi, XCircle, Award, ArrowUpRight, ArrowDownRight, Thermometer, Cpu, Check, BarChart3, AlertTriangle, ChevronDown, ChevronUp, Trophy, Crown, TrendingUp } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -944,6 +944,71 @@ export function DashboardPage() {
     vllm: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400',
     sglang: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400',
   }
+
+  // ── Performance Metrics Timeline ──────────────────────────────────────
+  type TimelinePeriod = '24h' | '7d' | '30d'
+  const [metricsPeriod, setMetricsPeriod] = useState<TimelinePeriod>('24h')
+
+  const metricsTimelineData = useMemo(() => {
+    const pointCount = metricsPeriod === '24h' ? 24 : metricsPeriod === '7d' ? 28 : 30
+    const data = []
+
+    for (let i = 0; i < pointCount; i++) {
+      const progress = i / pointCount
+
+      // Throughput: slight upward trend with noise
+      const throughputBase = 2800 + progress * 600
+      const throughputNoise = (Math.sin(i * 0.7) * 200) + (Math.cos(i * 1.3) * 150) + (Math.random() - 0.5) * 100
+      const throughput = Math.max(1800, Math.round(throughputBase + throughputNoise))
+
+      // Latency P99: slight downward trend (improving) with occasional spikes
+      const latencyBase = 180 - progress * 25
+      const latencyNoise = (Math.sin(i * 0.5) * 15) + (Math.cos(i * 1.1) * 10) + (Math.random() - 0.5) * 8
+      const latencySpike = (i === Math.floor(pointCount * 0.6) || i === Math.floor(pointCount * 0.85)) ? 40 + Math.random() * 20 : 0
+      const latency = Math.max(80, Math.round(latencyBase + latencyNoise + latencySpike))
+
+      // Error rate: mostly flat near 0 with occasional spikes
+      const errorBase = 0.2
+      const errorNoise = Math.random() * 0.15
+      const errorSpike = (i === Math.floor(pointCount * 0.4) || i === Math.floor(pointCount * 0.75)) ? 1.5 + Math.random() * 1.5 : 0
+      const errorRate = Math.max(0, Math.round((errorBase + errorNoise + errorSpike) * 100) / 100)
+
+      // GPU efficiency: stable around 75-85% with daily patterns
+      const gpuBase = 78 + Math.sin(i * (Math.PI * 2 / (metricsPeriod === '24h' ? 24 : 7))) * 5
+      const gpuNoise = (Math.random() - 0.5) * 4
+      const gpuEfficiency = Math.max(60, Math.min(98, Math.round((gpuBase + gpuNoise) * 10) / 10))
+
+      data.push({
+        index: i,
+        label: metricsPeriod === '24h' ? `${i}h` : metricsPeriod === '7d' ? `D${Math.floor(i / 4) + 1}` : `D${i + 1}`,
+        throughput,
+        latency,
+        errorRate,
+        gpuEfficiency,
+      })
+    }
+
+    return data
+  }, [metricsPeriod])
+
+  const metricsSummary = useMemo(() => {
+    if (metricsTimelineData.length === 0) return null
+    const last = metricsTimelineData[metricsTimelineData.length - 1]
+    const first = metricsTimelineData[0]
+    const mid = metricsTimelineData[Math.floor(metricsTimelineData.length / 2)]
+
+    const throughputChange = first.throughput > 0 ? ((last.throughput - mid.throughput) / mid.throughput * 100) : 0
+    const latencyChange = mid.latency > 0 ? ((last.latency - mid.latency) / mid.latency * 100) : 0
+    const errorChange = mid.errorRate > 0 ? ((last.errorRate - mid.errorRate) / mid.errorRate * 100) : 0
+    const gpuChange = mid.gpuEfficiency > 0 ? ((last.gpuEfficiency - mid.gpuEfficiency) / mid.gpuEfficiency * 100) : 0
+
+    return {
+      throughput: { value: last.throughput, change: Math.round(throughputChange * 10) / 10, direction: throughputChange >= 0 ? 'up' as const : 'down' as const },
+      latency: { value: last.latency, change: Math.round(latencyChange * 10) / 10, direction: latencyChange <= 0 ? 'up' as const : 'down' as const },
+      errorRate: { value: last.errorRate, change: Math.round(errorChange * 10) / 10, direction: errorChange <= 0 ? 'up' as const : 'down' as const },
+      gpuEfficiency: { value: last.gpuEfficiency, change: Math.round(gpuChange * 10) / 10, direction: gpuChange >= 0 ? 'up' as const : 'down' as const },
+    }
+  }, [metricsTimelineData])
 
   // ── GPU Cluster real-time simulation ──────────────────────────────────
   const [gpuNodes, setGpuNodes] = useState<GpuNodeData[]>(INITIAL_GPU_NODES)
@@ -2200,6 +2265,232 @@ export function DashboardPage() {
                 No benchmark results yet. Run benchmarks to see engine efficiency comparison.
               </div>
             )}
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* ── Performance Metrics Timeline ────────────────────────────── */}
+      <motion.div variants={item}>
+        <Card className="py-0 gap-0 overflow-hidden card-hover-enhanced">
+          <CardHeader className="pb-3 pt-5 px-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
+                  <TrendingUp className="h-5 w-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-base font-semibold">Performance Metrics Timeline</CardTitle>
+                  <CardDescription>Key metrics trends over time</CardDescription>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 rounded-lg bg-muted/50 p-1">
+                {(['24h', '7d', '30d'] as const).map(period => (
+                  <button
+                    key={period}
+                    onClick={() => setMetricsPeriod(period)}
+                    className={cn(
+                      'rounded-md px-2.5 py-1 text-xs font-medium transition-all cursor-pointer',
+                      metricsPeriod === period
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    {period}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="px-5 pb-5 pt-0">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+              {/* Throughput Trend */}
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0 }}
+                className="rounded-xl border p-4 space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-muted-foreground">Throughput Trend</span>
+                  {metricsSummary && (
+                    <div className={cn(
+                      'flex items-center gap-0.5 text-[11px] font-medium px-1.5 py-0.5 rounded-full',
+                      metricsSummary.throughput.direction === 'up'
+                        ? 'text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/50'
+                        : 'text-rose-700 bg-rose-50 dark:text-rose-400 dark:bg-rose-950/50'
+                    )}>
+                      {metricsSummary.throughput.direction === 'up' ? (
+                        <ArrowUpRight className="h-3 w-3" />
+                      ) : (
+                        <ArrowDownRight className="h-3 w-3" />
+                      )}
+                      {Math.abs(metricsSummary.throughput.change)}%
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <span className="text-2xl font-bold tracking-tight">
+                    {metricsSummary ? metricsSummary.throughput.value.toLocaleString() : '—'}
+                  </span>
+                  <span className="text-sm text-muted-foreground ml-1">tokens/s</span>
+                </div>
+                <ChartContainer
+                  config={{ value: { label: 'Throughput', color: '#10b981' } }}
+                  className="h-[50px] w-full"
+                >
+                  <AreaChart data={metricsTimelineData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="sparklineThroughput" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <Area type="monotone" dataKey="throughput" stroke="#10b981" fill="url(#sparklineThroughput)" strokeWidth={1.5} dot={false} />
+                  </AreaChart>
+                </ChartContainer>
+              </motion.div>
+
+              {/* Latency P99 Trend */}
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.05 }}
+                className="rounded-xl border p-4 space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-muted-foreground">Latency P99 Trend</span>
+                  {metricsSummary && (
+                    <div className={cn(
+                      'flex items-center gap-0.5 text-[11px] font-medium px-1.5 py-0.5 rounded-full',
+                      metricsSummary.latency.direction === 'up'
+                        ? 'text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/50'
+                        : 'text-rose-700 bg-rose-50 dark:text-rose-400 dark:bg-rose-950/50'
+                    )}>
+                      {metricsSummary.latency.direction === 'up' ? (
+                        <ArrowDownRight className="h-3 w-3" />
+                      ) : (
+                        <ArrowUpRight className="h-3 w-3" />
+                      )}
+                      {Math.abs(metricsSummary.latency.change)}%
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <span className="text-2xl font-bold tracking-tight">
+                    {metricsSummary ? metricsSummary.latency.value : '—'}
+                  </span>
+                  <span className="text-sm text-muted-foreground ml-1">ms</span>
+                </div>
+                <ChartContainer
+                  config={{ value: { label: 'Latency', color: '#f59e0b' } }}
+                  className="h-[50px] w-full"
+                >
+                  <AreaChart data={metricsTimelineData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="sparklineLatency" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <Area type="monotone" dataKey="latency" stroke="#f59e0b" fill="url(#sparklineLatency)" strokeWidth={1.5} dot={false} />
+                  </AreaChart>
+                </ChartContainer>
+              </motion.div>
+
+              {/* Error Rate Trend */}
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.1 }}
+                className="rounded-xl border p-4 space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-muted-foreground">Error Rate Trend</span>
+                  {metricsSummary && (
+                    <div className={cn(
+                      'flex items-center gap-0.5 text-[11px] font-medium px-1.5 py-0.5 rounded-full',
+                      metricsSummary.errorRate.direction === 'up'
+                        ? 'text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/50'
+                        : 'text-rose-700 bg-rose-50 dark:text-rose-400 dark:bg-rose-950/50'
+                    )}>
+                      {metricsSummary.errorRate.direction === 'up' ? (
+                        <ArrowDownRight className="h-3 w-3" />
+                      ) : (
+                        <ArrowUpRight className="h-3 w-3" />
+                      )}
+                      {Math.abs(metricsSummary.errorRate.change)}%
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <span className="text-2xl font-bold tracking-tight">
+                    {metricsSummary ? metricsSummary.errorRate.value : '—'}
+                  </span>
+                  <span className="text-sm text-muted-foreground ml-1">%</span>
+                </div>
+                <ChartContainer
+                  config={{ value: { label: 'Error Rate', color: '#ef4444' } }}
+                  className="h-[50px] w-full"
+                >
+                  <AreaChart data={metricsTimelineData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="sparklineError" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <Area type="monotone" dataKey="errorRate" stroke="#ef4444" fill="url(#sparklineError)" strokeWidth={1.5} dot={false} />
+                  </AreaChart>
+                </ChartContainer>
+              </motion.div>
+
+              {/* GPU Efficiency Trend */}
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.15 }}
+                className="rounded-xl border p-4 space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-muted-foreground">GPU Efficiency Trend</span>
+                  {metricsSummary && (
+                    <div className={cn(
+                      'flex items-center gap-0.5 text-[11px] font-medium px-1.5 py-0.5 rounded-full',
+                      metricsSummary.gpuEfficiency.direction === 'up'
+                        ? 'text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/50'
+                        : 'text-rose-700 bg-rose-50 dark:text-rose-400 dark:bg-rose-950/50'
+                    )}>
+                      {metricsSummary.gpuEfficiency.direction === 'up' ? (
+                        <ArrowUpRight className="h-3 w-3" />
+                      ) : (
+                        <ArrowDownRight className="h-3 w-3" />
+                      )}
+                      {Math.abs(metricsSummary.gpuEfficiency.change)}%
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <span className="text-2xl font-bold tracking-tight">
+                    {metricsSummary ? metricsSummary.gpuEfficiency.value : '—'}
+                  </span>
+                  <span className="text-sm text-muted-foreground ml-1">%</span>
+                </div>
+                <ChartContainer
+                  config={{ value: { label: 'GPU Efficiency', color: '#3b82f6' } }}
+                  className="h-[50px] w-full"
+                >
+                  <AreaChart data={metricsTimelineData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="sparklineGpu" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <Area type="monotone" dataKey="gpuEfficiency" stroke="#3b82f6" fill="url(#sparklineGpu)" strokeWidth={1.5} dot={false} />
+                  </AreaChart>
+                </ChartContainer>
+              </motion.div>
+            </div>
           </CardContent>
         </Card>
       </motion.div>

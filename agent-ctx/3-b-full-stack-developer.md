@@ -1,25 +1,38 @@
-# Task 3-b: Notification Center Panel
+# Task 3-b: Add Sankey Diagram to Reports Page
 
-## Summary
-Added a Notification Center component with bell icon and dropdown panel to the InferBench application header.
+## Work Summary
 
-## Files Modified
-- `src/lib/types.ts` - Added NotificationType and Notification interface
-- `src/lib/store.ts` - Added notification state (notifications array, setNotifications, addNotification, markAsRead, markAllAsRead, removeNotification)
-- `src/components/notification-center.tsx` - Created new component (NotificationCenter)
-- `src/app/page.tsx` - Integrated NotificationCenter into header, next to theme toggle
+Added a new "Sankey" chart tab to the Reports page (`src/components/reports/reports-page.tsx`) that visualizes the flow of inference requests through different processing stages using a custom SVG Sankey diagram.
 
-## Files Created
-- `src/components/notification-center.tsx` - Complete Notification Center with bell icon, unread badge, dropdown panel, 6 notification types, mock data
+## Changes Made
 
-## Key Design Decisions
-- Used Popover from shadcn/ui instead of custom dropdown
-- Zustand store for notification state (consistent with existing pattern)
-- 6 notification types with distinct colors: emerald (completed), red (failed), blue (deployed), violet (analysis), amber (alert), sky (profile updated)
-- Framer Motion animations for item entry and badge pulse
-- ScrollArea with max-h-[400px] for overflow handling
-- Click-to-navigate: clicking notification marks as read and navigates to linked page
-- Dark mode fully compatible
+### Imports Added
+- `useRef` from React (for SVG ref and ResizeObserver)
+- `GitBranch` from lucide-react (for tab icon)
+- `motion` from framer-motion (for entrance animations)
 
-## Lint Status
-0 errors, 0 warnings
+### State Variables Added
+- `sankeyEngineFilter`: 'all' | 'vllm' | 'sglang' - filters Sankey flows by engine
+- `sankeyFlowType`: 'volume' | 'latency' | 'throughput' - determines flow value calculation
+- `sankeyHoveredLink`: string | null - tracks which link is hovered for highlight effect
+
+### Data Computation (after `filtered` declaration)
+- `sankeyFiltered`: applies additional engine filter to `filtered` data
+- `sankeyData`: computes full Sankey graph with nodes (Input/Processing/Output) and links
+- `sankeySummary`: computes Total Flow Volume, Dominant Path, Processing Efficiency, Bottleneck Stage
+
+### SankeyDiagram Component
+- Custom SVG component with responsive width (ResizeObserver)
+- 3-column layout: Input → Processing → Output
+- Cubic bezier path links between nodes
+- Hover interaction with highlight/dim
+- framer-motion entrance animations
+- Tooltip showing source→target, flow value, percentage, engine
+
+### Tab Integration
+- "Sankey" tab trigger added between Waterfall and Radar
+- Full TabsContent with controls, summary panel, diagram, and legend
+
+## Verification
+- ESLint: 0 errors
+- Dev server: compiles successfully

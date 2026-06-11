@@ -8,7 +8,8 @@ import {
   Timer, ArrowUpDown, ArrowUp, ArrowDown, Filter, Plus,
   Server, Settings, Cloud, ChevronRight, AlertTriangle,
   Gauge, TrendingUp, BarChart3, Wifi, WifiOff, Radio,
-  GitCompareArrows, X, Trophy, Minus, Scale
+  GitCompareArrows, X, Trophy, Minus, Scale,
+  Bookmark, Pin, MessageSquare, Trash
 } from 'lucide-react'
 import {
   Card, CardContent, CardDescription, CardFooter,
@@ -66,6 +67,66 @@ interface BenchmarkWithRelations extends BenchmarkTaskInfo {
   model?: { id: string; name: string; engine: string }
   profile?: { id: string; name: string; engine: string }
   results?: BenchmarkResultInfo[]
+}
+
+// ─── Annotation Types ──────────────────────────────────────────
+type AnnotationColor = 'red' | 'orange' | 'yellow' | 'green' | 'blue' | 'purple'
+
+interface Annotation {
+  id: string
+  text: string
+  color: AnnotationColor
+  createdAt: string
+  author: string
+  pinned: boolean
+}
+
+const ANNOTATION_COLORS: { value: AnnotationColor; label: string; className: string; dotClass: string }[] = [
+  { value: 'red', label: 'Red', className: 'bg-red-100 text-red-700 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', dotClass: 'bg-red-500' },
+  { value: 'orange', label: 'Orange', className: 'bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800', dotClass: 'bg-orange-500' },
+  { value: 'yellow', label: 'Yellow', className: 'bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-800', dotClass: 'bg-yellow-500' },
+  { value: 'green', label: 'Green', className: 'bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', dotClass: 'bg-emerald-500' },
+  { value: 'blue', label: 'Blue', className: 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800', dotClass: 'bg-blue-500' },
+  { value: 'purple', label: 'Purple', className: 'bg-violet-100 text-violet-700 border-violet-300 dark:bg-violet-900/30 dark:text-violet-400 dark:border-violet-800', dotClass: 'bg-violet-500' },
+]
+
+function getAnnotationColorConfig(color: AnnotationColor) {
+  return ANNOTATION_COLORS.find(c => c.value === color) ?? ANNOTATION_COLORS[3]
+}
+
+/** Generate sample annotations for a given task ID (deterministic based on id) */
+function generateSampleAnnotations(taskId: string): Annotation[] {
+  const hash = taskId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
+  const now = new Date()
+  const annotations: Annotation[] = [
+    {
+      id: `${taskId}-ann-1`,
+      text: hash % 2 === 0 ? 'Good throughput results, consider testing with higher concurrency' : 'Latency seems high for this model size, needs investigation',
+      color: hash % 2 === 0 ? 'green' : 'orange',
+      createdAt: new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString(),
+      author: 'User',
+      pinned: hash % 3 === 0,
+    },
+    {
+      id: `${taskId}-ann-2`,
+      text: hash % 3 === 0 ? 'GPU memory utilization near limit — watch for OOM' : 'Results are consistent with previous runs',
+      color: hash % 3 === 0 ? 'red' : 'blue',
+      createdAt: new Date(now.getTime() - 5 * 60 * 60 * 1000).toISOString(),
+      author: 'User',
+      pinned: false,
+    },
+  ]
+  if (hash % 2 === 1) {
+    annotations.push({
+      id: `${taskId}-ann-3`,
+      text: 'Re-run with updated parameter profile after tuning',
+      color: 'purple',
+      createdAt: new Date(now.getTime() - 8 * 60 * 60 * 1000).toISOString(),
+      author: 'User',
+      pinned: true,
+    })
+  }
+  return annotations
 }
 
 // ─── Scenario Config ──────────────────────────────────────────
@@ -375,6 +436,71 @@ export default function BenchmarkPage() {
   // Compare mode state
   const [compareIds, setCompareIds] = useState<string[]>([])
   const [compareDialogOpen, setCompareDialogOpen] = useState(false)
+
+  // ─── Annotation State ──────────────────────────────────────
+  const [annotationsMap, setAnnotationsMap] = useState<Record<string, Annotation[]>>({})
+  const [newAnnotationText, setNewAnnotationText] = useState('')
+  const [newAnnotationColor, setNewAnnotationColor] = useState<AnnotationColor>('green')
+  const [deleteAnnotationId, setDeleteAnnotationId] = useState<string | null>(null)
+
+  // Initialize sample annotations for tasks that have completed results
+  const initializedAnnotations = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (!tasks || tasks.length === 0) return
+    setAnnotationsMap(prev => {
+      const updated = { ...prev }
+      let changed = false
+      for (const task of tasks) {
+        if (task.status === 'completed' && !initializedAnnotations.current.has(task.id) && !updated[task.id]) {
+          updated[task.id] = generateSampleAnnotations(task.id)
+          initializedAnnotations.current.add(task.id)
+          changed = true
+        }
+      }
+      return changed ? updated : prev
+    })
+  }, [tasks])
+
+  const getAnnotationsForTask = useCallback((taskId: string): Annotation[] => {
+    return annotationsMap[taskId] ?? []
+  }, [annotationsMap])
+
+  const handleAddAnnotation = useCallback(() => {
+    if (!selectedResultTask || !newAnnotationText.trim()) return
+    const taskId = selectedResultTask.id
+    const newAnnotation: Annotation = {
+      id: `${taskId}-ann-${Date.now()}`,
+      text: newAnnotationText.trim(),
+      color: newAnnotationColor,
+      createdAt: new Date().toISOString(),
+      author: 'User',
+      pinned: false,
+    }
+    setAnnotationsMap(prev => ({
+      ...prev,
+      [taskId]: [...(prev[taskId] ?? []), newAnnotation],
+    }))
+    setNewAnnotationText('')
+    toast.success('Annotation added')
+  }, [selectedResultTask, newAnnotationText, newAnnotationColor])
+
+  const handleDeleteAnnotation = useCallback((taskId: string, annotationId: string) => {
+    setAnnotationsMap(prev => ({
+      ...prev,
+      [taskId]: (prev[taskId] ?? []).filter(a => a.id !== annotationId),
+    }))
+    setDeleteAnnotationId(null)
+    toast.success('Annotation deleted')
+  }, [])
+
+  const handleTogglePin = useCallback((taskId: string, annotationId: string) => {
+    setAnnotationsMap(prev => ({
+      ...prev,
+      [taskId]: (prev[taskId] ?? []).map(a =>
+        a.id === annotationId ? { ...a, pinned: !a.pinned } : a
+      ),
+    }))
+  }, [])
 
   // ─── WebSocket Event Handlers ────────────────────────────
   useEffect(() => {
@@ -1127,7 +1253,12 @@ export default function BenchmarkPage() {
                               </TableCell>
                               <TableCell>
                                 <div className="flex flex-col">
-                                  <span className="font-medium">{task.name}</span>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-medium">{task.name}</span>
+                                    {getAnnotationsForTask(task.id).some(a => a.pinned) && (
+                                      <Pin className="size-3 text-emerald-600 dark:text-emerald-400 fill-emerald-600 dark:fill-emerald-400" />
+                                    )}
+                                  </div>
                                   <span className="text-muted-foreground text-xs">
                                     {task.engine?.toUpperCase()} • {task.profileName}
                                   </span>
@@ -1202,10 +1333,15 @@ export default function BenchmarkPage() {
                                         <Button
                                           variant="ghost"
                                           size="icon"
-                                          className="size-8"
+                                          className="size-8 relative"
                                           onClick={() => handleViewResult(task)}
                                         >
                                           <Eye className="size-4" />
+                                          {getAnnotationsForTask(task.id).length > 0 && (
+                                            <span className="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-emerald-500 text-[8px] font-bold text-white">
+                                              {getAnnotationsForTask(task.id).length}
+                                            </span>
+                                          )}
                                         </Button>
                                       </TooltipTrigger>
                                       <TooltipContent>View Results</TooltipContent>
@@ -1487,6 +1623,14 @@ export default function BenchmarkPage() {
                   <TabsTrigger value="details" className="flex-1">
                     <Activity className="size-3.5" /> Details
                   </TabsTrigger>
+                  <TabsTrigger value="annotations" className="flex-1">
+                    <Bookmark className="size-3.5" /> Annotations
+                    {selectedResultTask && getAnnotationsForTask(selectedResultTask.id).length > 0 && (
+                      <span className="ml-1 flex size-4 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-bold text-white">
+                        {getAnnotationsForTask(selectedResultTask.id).length}
+                      </span>
+                    )}
+                  </TabsTrigger>
                 </TabsList>
 
                 {/* Performance Tab */}
@@ -1731,6 +1875,153 @@ export default function BenchmarkPage() {
                       </CardContent>
                     </Card>
                   </div>
+                </TabsContent>
+
+                {/* Annotations Tab */}
+                <TabsContent value="annotations" className="mt-4 space-y-4">
+                  {selectedResultTask && (() => {
+                    const taskAnnotations = getAnnotationsForTask(selectedResultTask.id)
+                    return (
+                      <>
+                        {/* Add Annotation Form */}
+                        <Card className="py-3">
+                          <CardContent className="p-4 space-y-3">
+                            <h4 className="text-sm font-semibold flex items-center gap-2">
+                              <Plus className="size-4" /> Add Annotation
+                            </h4>
+                            <div className="flex gap-2">
+                              <Input
+                                placeholder="Add a note about this benchmark result..."
+                                value={newAnnotationText}
+                                onChange={e => setNewAnnotationText(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter' && newAnnotationText.trim()) handleAddAnnotation() }}
+                                className="flex-1"
+                              />
+                              <Button
+                                size="sm"
+                                onClick={handleAddAnnotation}
+                                disabled={!newAnnotationText.trim()}
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white shrink-0"
+                              >
+                                Add
+                              </Button>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground">Tag:</span>
+                              <div className="flex items-center gap-1.5">
+                                {ANNOTATION_COLORS.map(c => (
+                                  <button
+                                    key={c.value}
+                                    onClick={() => setNewAnnotationColor(c.value)}
+                                    className={`size-6 rounded-full border-2 transition-all will-change-transform ${c.dotClass} ${
+                                      newAnnotationColor === c.value
+                                        ? 'ring-2 ring-offset-1 ring-emerald-500 scale-110'
+                                        : 'opacity-60 hover:opacity-100 hover:scale-105'
+                                    }`}
+                                    title={c.label}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        {/* Annotations List */}
+                        {taskAnnotations.length === 0 ? (
+                          <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                            <MessageSquare className="size-8 opacity-40 mb-2" />
+                            <p className="text-sm">No annotations yet</p>
+                            <p className="text-xs">Add a note to annotate this benchmark result</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                            {/* Pinned annotations first */}
+                            {[...taskAnnotations].sort((a, b) => {
+                              if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
+                              return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+                            }).map(annotation => {
+                              const colorConfig = getAnnotationColorConfig(annotation.color)
+                              return (
+                                <motion.div
+                                  key={annotation.id}
+                                  initial={{ opacity: 0, y: 8 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  transition={{ duration: 0.2 }}
+                                  className={`flex items-start gap-3 rounded-lg border p-3 transition-all ${colorConfig.className} ${annotation.pinned ? 'ring-1 ring-emerald-300 dark:ring-emerald-700' : ''}`}
+                                >
+                                  <div className={`mt-1 size-2.5 shrink-0 rounded-full ${colorConfig.dotClass}`} />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="text-xs font-semibold">{annotation.author}</span>
+                                      <span className="text-muted-foreground text-[10px]">
+                                        {getTimeAgo(annotation.createdAt)}
+                                      </span>
+                                      {annotation.pinned && (
+                                        <Pin className="size-3 text-emerald-600 dark:text-emerald-400 fill-emerald-600 dark:fill-emerald-400" />
+                                      )}
+                                    </div>
+                                    <p className="text-sm leading-relaxed">{annotation.text}</p>
+                                  </div>
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="size-7"
+                                          onClick={() => handleTogglePin(selectedResultTask.id, annotation.id)}
+                                        >
+                                          <Pin className={`size-3.5 ${annotation.pinned ? 'text-emerald-600 dark:text-emerald-400 fill-emerald-600 dark:fill-emerald-400' : 'text-muted-foreground'}`} />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>{annotation.pinned ? 'Unpin' : 'Pin'}</TooltipContent>
+                                    </Tooltip>
+                                    <AlertDialog open={deleteAnnotationId === annotation.id} onOpenChange={(open) => { if (!open) setDeleteAnnotationId(null) }}>
+                                      <AlertDialogTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="size-7 text-muted-foreground hover:text-red-500"
+                                          onClick={() => setDeleteAnnotationId(annotation.id)}
+                                        >
+                                          <Trash className="size-3.5" />
+                                        </Button>
+                                      </AlertDialogTrigger>
+                                      <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                          <AlertDialogTitle>Delete Annotation</AlertDialogTitle>
+                                          <AlertDialogDescription>
+                                            Are you sure you want to delete this annotation? This action cannot be undone.
+                                          </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                          <AlertDialogAction
+                                            onClick={() => handleDeleteAnnotation(selectedResultTask.id, annotation.id)}
+                                            className="bg-red-600 hover:bg-red-700 text-white"
+                                          >
+                                            Delete
+                                          </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                      </AlertDialogContent>
+                                    </AlertDialog>
+                                  </div>
+                                </motion.div>
+                              )
+                            })}
+                          </div>
+                        )}
+
+                        {/* Annotation summary */}
+                        {taskAnnotations.length > 0 && (
+                          <div className="flex items-center gap-4 text-xs text-muted-foreground pt-1">
+                            <span>{taskAnnotations.length} annotation{taskAnnotations.length !== 1 ? 's' : ''}</span>
+                            <span>{taskAnnotations.filter(a => a.pinned).length} pinned</span>
+                          </div>
+                        )}
+                      </>
+                    )
+                  })()}
                 </TabsContent>
               </Tabs>
             </>

@@ -193,6 +193,7 @@ function EngineBadge({ engine }: { engine: EngineType }) {
 }
 
 function StatusDot({ status }: { status: ModelStatus }) {
+  const { t } = useI18n()
   const colors: Record<ModelStatus, string> = {
     active: 'bg-emerald-500',
     inactive: 'bg-gray-400 dark:bg-gray-500',
@@ -254,6 +255,7 @@ function ModelCard({
   isSelected: boolean
   onToggleSelect: (model: ModelInfo) => void
 }) {
+  const { t } = useI18n()
   return (
     <motion.div
       layout
@@ -380,6 +382,7 @@ function ModelFormDialog({
   onAddModel: (data: Omit<ModelInfo, 'id' | 'createdAt' | 'updatedAt'>) => Promise<ModelInfo>
   onEditModel: (id: string, data: Partial<ModelInfo>) => Promise<ModelInfo>
 }) {
+  const { t } = useI18n()
   const isEditing = !!editingModel
   const [submitting, setSubmitting] = useState(false)
 
@@ -858,6 +861,7 @@ function generatePerformanceHistory(model: ModelInfo, days: number): Performance
 // ─── Performance History Section ──────────────────────────────────────────────
 
 function PerformanceHistorySection({ model }: { model: ModelInfo }) {
+  const { t } = useI18n()
   const VLLM_COLOR = '#10b981'
   const LATENCY_COLOR = '#f59e0b'
 
@@ -1084,6 +1088,7 @@ function ModelDetailSheet({
   onOpenChange: (open: boolean) => void
   allResults: BenchmarkResultInfo[]
 }) {
+  const { t } = useI18n()
   // ─── Performance Radar Data ──────────────────────────────────────────
   const VLLM_COLOR = '#10b981'
   const SGLANG_COLOR = '#f59e0b'

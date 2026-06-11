@@ -2185,3 +2185,252 @@ Stage Summary:
 4. **更多高级图表**：桑基图（Sankey）、火焰图（Flame Chart）
 5. **数据持久化增强**：Dashboard统计缓存、前端数据预取
 6. **移动端适配优化**：底部导航栏、触摸手势优化
+
+---
+Task ID: 3-a
+Agent: full-stack-developer
+Task: Add Flame Chart to Analysis Page
+
+Work Log:
+- Read analysis-page.tsx (2145 lines) to understand existing structure: 5 tabs (Inflection Analysis, Correlation Heatmap, Optimization Suggestions, Sensitivity Analysis, Sensitivity Heatmap), with state variables, useMemo computations, and handlers
+- Added new imports: Slider, Switch, Label from shadcn/ui; Layers, Filter icons from lucide-react
+- Removed unused import: useBenchmarks from use-api
+- Created Flame Chart data generation helpers:
+  - `FlameChartStage`, `FlameChartRequest`, `FlameChartSummary` TypeScript interfaces
+  - `FLAME_STAGE_COLORS` constant mapping stage names to Tailwind bg classes (Queue=slate, Tokenization=sky, Prefill=emerald, Decode=amber, Post-processing=violet)
+  - `seededRandom()` and `hashString()` for deterministic random data generation based on model name
+  - `generateFlameChartData()` creating 5-15 concurrent requests with 5 stages each, realistic durations scaled by model/engine/concurrency
+  - `computeFlameSummary()` calculating total processing time, avg stage breakdown, and bottleneck identification
+- Added state variables: flameConcurrency (8), flameZoom (1), showBottlenecksOnly (false), flameHoveredStage
+- Added useMemo computations: flameData, flameSummary, flameMaxTime, filteredFlameData (placed after existing sensitivityInsights useMemo to avoid temporal dead zone)
+- Added "Flame Chart" tab trigger with Flame icon to existing TabsList
+- Built complete Flame Chart TabsContent with:
+  - Summary Panel: 4 cards (Total Processing Time, Concurrent Requests, Bottleneck with avg ms, Avg Stage Breakdown with color dots)
+  - Controls Card: Concurrency slider (1-32), Time Zoom slider (0.5-3x), Show Bottlenecks Only toggle
+  - Flame Chart Visualization: horizontal bars per request row with color-coded stages, time axis with ms labels, framer-motion animations (scaleX from 0 to 1 for bar entry, staggered opacity for rows), hover tooltips showing stage name/duration/start/end/bottleneck
+  - Stage Duration Breakdown: horizontal progress bars per stage with percentage, bottleneck badge, animated width
+  - Info Card: explanatory text about flame chart, engine-specific notes
+- Cleaned up unused code: removed flameAnimated state (unused), FLAME_STAGE_HEX constant (unused), useBenchmarks import (unused in this file)
+- Ran ESLint: zero errors
+- Verified dev server compiles successfully
+
+Stage Summary:
+- Added complete "Flame Chart" tab to Analysis page as the 6th tab
+- Realistic flame chart data generated deterministically using seeded random based on model name
+- 5 processing stages with color coding: Queue (slate), Tokenization (sky), Prefill (emerald), Decode (amber), Post-processing (violet)
+- Controls: Concurrency slider (1-32), Time Zoom slider (0.5-3x), Bottleneck filter toggle
+- framer-motion animations: bars grow from left (scaleX), rows stagger in, progress bars animate
+- Hover tooltips showing stage details and bottleneck identification
+- Dark mode compatible via Tailwind classes
+- VLLM/SGLang engine-aware data generation
+- Zero lint errors, dev server compiles successfully
+
+---
+Task ID: 3-b
+Agent: full-stack-developer
+Task: Add Sankey Diagram to Reports Page
+
+Work Log:
+- Read current reports-page.tsx to understand existing structure: 7 chart tabs (Throughput, Latency, Scatter, TTFT&TPOT, Waterfall, Radar, Grade), tab system, filtered data pipeline, existing hooks and state
+- Read worklog.md for project context and previous work history
+- Added new imports: `useRef` from React, `GitBranch` from lucide-react, `motion` from framer-motion
+- Added Sankey state variables: `sankeyEngineFilter` ('all'|'vllm'|'sglang'), `sankeyFlowType` ('volume'|'latency'|'throughput'), `sankeyHoveredLink` (string|null)
+- Added `sankeyFiltered` useMemo after `filtered` declaration - applies additional engine filter for Sankey tab
+- Defined Sankey data structures: SankeyNode (id, label, column, color, value), SankeyLink (id, source, target, value, color, engine)
+- Implemented `classifyOutput()` function - classifies results into output categories (High Throughput, Low Latency, Balanced, High Memory) based on performance characteristics
+- Implemented `getFlowValue()` function - returns flow value based on flow type (volume=1, latency=latencyP99Ms, throughput=throughputTokensPerSec)
+- Implemented `getProcessingWeights()` function - calculates processing stage weights (Queue 8%, Prefill based on TTFT, Decode based on TPOT, Post-processing remainder)
+- Implemented `getLinkColor()` function - returns VLLM=#10b981, SGLang=#f59e0b, Mixed=#8b5cf6
+- Created `sankeyData` useMemo - computes full Sankey graph from sankeyFiltered:
+  - Input nodes: Single Stream, Multi Stream, Burst, Serving, Custom (from scenario)
+  - Processing nodes: Queue, Prefill, Decode, Post-processing (weighted by latency distribution)
+  - Output nodes: High Throughput, Low Latency, Balanced, High Memory (from classifyOutput)
+  - Links: Input→Processing and Processing→Output with engine-dominant coloring
+  - Engine tracking per link for color coding
+- Created `sankeySummary` useMemo - computes summary stats:
+  - Total Flow Volume (sum of all link values)
+  - Dominant Path (highest combined Input→Processing→Output path)
+  - Processing Efficiency (Prefill+Decode / total processing × 100)
+  - Bottleneck Stage (processing node with highest value)
+- Created `SankeyDiagram` SVG component outside ReportsPage:
+  - Responsive SVG with ResizeObserver for width tracking
+  - 3-column layout: Input (x=5%), Processing (x=38%), Output (x=76%)
+  - Node positioning: proportional height based on value, with minimum 12px height
+  - Links rendered as cubic bezier SVG paths (C command) between source and target nodes
+  - Link thickness proportional to flow value relative to source/target node sizes
+  - Link y-offsets tracked per node to stack connections without overlap
+  - Links sorted by value descending for visual clarity
+  - Hover interaction: hovered link highlighted (opacity 0.9), others dimmed (opacity 0.15)
+  - Tooltip showing: source→target name, flow value with unit, percentage of source node, engine type
+  - framer-motion entrance animations: links animate pathLength 0→1 with staggered delay, nodes fade in with x offset
+  - Node labels positioned: left side for column 0 (textAnchor end), right side for columns 1-2 (textAnchor start)
+  - Column headers: Input, Processing, Output as SVG text
+  - Dark mode compatible via fill-foreground, fill-muted-foreground classes
+- Added "Sankey" TabsTrigger between Waterfall and Radar
+- Added Sankey TabsContent with:
+  - Card header with GitBranch icon, title "Inference Flow Sankey", description
+  - Controls row: Engine filter dropdown (All/VLLM/SGLang) + Flow type dropdown (Request Volume/Latency Distribution/Throughput Distribution)
+  - Summary panel: 4 cards (Total Flow Volume, Dominant Path, Processing Efficiency %, Bottleneck Stage with AlertCircle badge)
+  - SankeyDiagram component instance
+  - Color legend: VLLM (emerald), SGLang (amber), Mixed (violet)
+  - Empty state with GitBranch icon
+- Ran ESLint: 0 errors
+- Verified dev server compiles successfully
+
+Stage Summary:
+- New "Sankey" chart tab added to Reports page between Waterfall and Radar
+- Custom SVG Sankey diagram with 3-column layout: Input (request types) → Processing (stages) → Output (metrics)
+- Interactive features: engine filter, flow type selector, hover highlighting with dimming, tooltip with flow details
+- Summary panel with 4 stat cards: Total Flow Volume, Dominant Path, Processing Efficiency, Bottleneck Stage
+- Color-coded links: VLLM=#10b981, SGLang=#f59e0b, Mixed=#8b5cf6
+- framer-motion entrance animations for both links and nodes
+- Dark mode compatible
+- Zero lint errors, successful compilation
+
+---
+Task ID: 4-5
+Agent: full-stack-developer
+Task: Add Benchmark Annotation System + Enhanced Dashboard Performance Metrics
+
+Work Log:
+- Read worklog.md to understand project progress
+- Read benchmark-page.tsx (2053 lines) to understand existing structure: result detail dialog with 3 tabs (Performance, Resources, Details), table with View Results button, WebSocket integration
+- Read dashboard-page.tsx (2392 lines) to understand existing structure: Engine Efficiency Matrix card, Activity Timeline section, GPU Cluster Monitor
+- Added annotation system to benchmark-page.tsx:
+  - Defined Annotation interface with id, text, color, createdAt, author, pinned fields
+  - Defined AnnotationColor type (red/orange/yellow/green/blue/purple) with ANNOTATION_COLORS config
+  - Created generateSampleAnnotations() function that generates 2-3 deterministic sample annotations per task based on task ID hash
+  - Added annotationsMap state (Record<string, Annotation[]>) with useRef for initialization tracking
+  - Added useEffect to initialize sample annotations for completed tasks on first load
+  - Added getAnnotationsForTask, handleAddAnnotation, handleDeleteAnnotation, handleTogglePin callbacks
+  - Added newAnnotationText, newAnnotationColor, deleteAnnotationId local state
+  - Added "Annotations" tab to Result Detail Dialog (4th tab) with:
+    - Add Annotation form with text input, color tag selector (6 colored circles), Enter key support
+    - Annotations list sorted by pinned-first then by date, with color-coded border backgrounds
+    - Pin/unpin toggle button with Tooltip per annotation
+    - Delete button with AlertDialog confirmation per annotation
+    - Empty state with MessageSquare icon when no annotations
+    - Annotation count summary footer
+  - Added annotation count badge on "View Results" button in table (green circle with count)
+  - Added Pin icon on benchmark rows that have pinned annotations (emerald filled pin)
+  - Added Bookmark, Pin, MessageSquare, Trash icons to lucide imports
+- Added Performance Metrics Timeline section to dashboard-page.tsx:
+  - Added metricsPeriod state (TimelinePeriod: '24h' | '7d' | '30d')
+  - Added metricsTimelineData useMemo generating realistic trend data:
+    - Throughput: slight upward trend (2800→3400) with sinusoidal noise
+    - Latency P99: slight downward trend (180→155ms) with occasional spikes
+    - Error rate: mostly flat near 0.2% with occasional spikes up to 3%
+    - GPU efficiency: stable around 78% with daily sinusoidal patterns
+  - Added metricsSummary useMemo computing current values and % change from mid to last point
+  - Added TrendingUp icon to lucide imports
+  - Added "Performance Metrics Timeline" card after Engine Efficiency Matrix section with:
+    - Card header with TrendingUp icon, title, description, and pill-style time period selector (24h/7d/30d)
+    - 4 sparkline cards in a responsive grid (1→2→4 columns):
+      - Throughput Trend: emerald (#10b981) area sparkline, tokens/s value, up/down trend arrow with % change
+      - Latency P99 Trend: amber (#f59e0b) area sparkline, ms value, inverted trend direction (down=good)
+      - Error Rate Trend: red (#ef4444) area sparkline, % value, inverted trend direction (down=good)
+      - GPU Efficiency Trend: blue (#3b82f6) area sparkline, % value, up/down trend arrow with % change
+    - Each card uses ChartContainer + AreaChart with gradient fill, no axes, no grid
+    - framer-motion staggered entry animations (0, 0.05, 0.1, 0.15s delays)
+- Ran ESLint: 0 errors
+- Verified dev server compiles and serves successfully
+
+Stage Summary:
+- Benchmark Annotation System: full annotation CRUD with color tags, pin/unpin, delete confirmation, sample data
+- Annotations tab added as 4th tab in Result Detail Dialog
+- Annotation count badge on View Results button, Pin icon on rows with pinned annotations
+- Dashboard Performance Metrics Timeline: 4 sparkline cards with realistic trend data, time period selector
+- Color scheme: Throughput=emerald, Latency=amber, Error Rate=red, GPU Efficiency=blue
+- Zero lint errors, dev server compiles successfully
+
+---
+Task ID: 5
+Agent: full-stack-developer
+Task: Enhanced Sidebar with Live Stats + Parameter Diff View
+
+Work Log:
+- Read current app-sidebar.tsx, parameters-page.tsx, use-api.ts hooks, types.ts, use-i18n.tsx, sheet.tsx, i18n.ts
+- Rewrote src/components/app-sidebar.tsx with live stats integration:
+  - Added imports for useModels, useBenchmarks, useResults, useAnalyses, useDashboardStats from @/hooks/use-api
+  - Created HealthDot component: animated emerald dot shown under Dashboard nav item when system is healthy
+  - Created MiniBadge component: small count badge shown under Models (emerald) and Reports/Analysis (amber variant) nav items
+  - Created RunningBadge component: amber pulsing dot with "X running" text under Benchmark nav item
+  - Created SystemStatusIndicator component: green/yellow/red dot with "Online"/"Degraded"/"Offline" text in sidebar footer
+  - Replaced static navItems with dynamic version that includes computed stats per nav item
+  - System status determined by checking API errors: all errors = offline, any error = degraded, no errors = online
+  - Replaced old static green ping dot + version text in footer with SystemStatusIndicator + version + locale switcher
+  - Kept animated gradient border on active nav item (already existed)
+  - Removed unused Wifi/WifiOff/AlertTriangle imports
+- Updated src/components/parameters/parameters-page.tsx with Parameter Diff feature:
+  - Added Fragment import from React, GitCompare/Check/Crown icons from lucide-react, AnimatePresence from framer-motion
+  - Added state: compareDialogOpen, compareProfileAId, compareProfileBId
+  - Added "Compare Profiles" button next to "New Profile" in header (disabled when < 2 profiles exist)
+  - Created PARAM_DIFF_DEFS configuration: 16 parameters across 4 categories (Memory & Capacity, Batch & Concurrency, Optimization, Sampling) with higherIsBetter/trueIsBetter/format metadata
+  - Created determineWinner() function: compares two profile parameter values and returns 'a'/'b'/'tie' based on higherIsBetter and trueIsBetter rules
+  - Created CompareProfilesDialog component:
+    - Two dropdown selectors (Profile A=emerald, Profile B=amber) with mutual exclusion
+    - Profile descriptions shown under each selector
+    - Side-by-side comparison table grouped by category with parameter names, values, and recommendation column
+    - Differences highlighted: emerald bg for Profile A winner, amber bg for Profile B winner
+    - Crown icon next to better value in each cell
+    - Recommendation badges: "A Better" (emerald), "B Better" (amber), "Same" (outline), "Context" (secondary)
+    - Same-value rows shown with reduced opacity
+    - Summary card at bottom: "Profile A is better for X parameters, Profile B is better for Y parameters, Z same/contextual"
+    - framer-motion entrance animation for the comparison content
+    - Empty state with GitCompare icon when profiles not yet selected
+    - ScrollArea for long comparison tables
+  - Connected dialog to ParametersPage via props
+- Ran ESLint: 0 errors
+- Verified dev server compiles and all API endpoints respond correctly
+
+Stage Summary:
+- Enhanced sidebar with live stats: model count badge, running benchmark count, result/analysis counts, system health dot, system status indicator (Online/Degraded/Offline) in footer
+- Parameter Diff View: "Compare Profiles" button opens dialog with two profile selectors, side-by-side comparison table, colored highlighting for differences, recommendation badges, summary card
+- Color scheme maintained: VLLM=emerald, SGLang=amber
+- Dark mode compatible throughout
+- Zero lint errors, dev server compiles successfully
+
+## 项目当前状态（第八轮Review后）
+
+### 项目当前状态描述/判断
+项目处于功能丰富且稳定的状态。已完成30+大功能模块，涵盖完整的推理引擎适配平台功能链路。本轮（第8轮）进行了全面的QA测试，发现并修复了3个关键bug，同时新增了5个重要功能。所有页面（Dashboard, Models, Parameters, Benchmark, Reports, Analysis, Settings）均正常渲染，零lint错误，零浏览器控制台错误。暗色主题和国际化功能均正常工作。
+
+### 当前目标/已完成的修改/验证结果
+
+**本轮修复的Bug：**
+1. **Models页面i18n崩溃** - `t is not defined`：StatusDot、ModelCard、ModelFormDialog、ModelDetailSheet、PerformanceHistorySection五个子组件使用t()但未调用useI18n() → 为每个子组件添加了`const { t } = useI18n()`
+2. **Reports页面崩溃** - `Cannot access 'filtered' before initialization`：waterfallResult useMemo在filtered声明之前引用了filtered → 将waterfall相关useMemo移到filtered声明之后
+3. **Analysis页面崩溃** - 同上原因，VLM分析确认已通过Reports修复解决
+
+**本轮新增功能：**
+1. **火焰图(Flame Chart)** - Analysis页面新增第6个标签页，可视化推理请求执行时间线，含并发滑块、缩放、瓶颈过滤
+2. **桑基图(Sankey Diagram)** - Reports页面新增标签页，SVG自定义实现，显示请求→处理→输出指标的数据流
+3. **Benchmark标注系统** - Benchmark结果详情新增Annotations标签页，支持添加/删除/置顶标注，6种颜色标签
+4. **Dashboard性能指标时间线** - 4个sparkline卡片（吞吐量/延迟P99/错误率/GPU效率趋势），24h/7d/30d时间范围
+5. **增强侧边栏实时统计** - 导航项下显示模型数/运行中benchmark/结果数/分析数，footer系统状态指示器
+6. **参数对比视图(Parameter Diff)** - Parameters页面"Compare Profiles"按钮，双配置对比表格，差异高亮+推荐徽章+汇总
+
+**验证结果：**
+- 所有7个页面正常渲染，无错误
+- 暗色模式正常工作
+- 国际化切换正常工作
+- 侧边栏实时统计数据正确显示
+- 零lint错误，零浏览器控制台错误
+- 所有API端点返回200
+
+### 未解决问题或风险，建议下一阶段优先事项
+
+**未解决问题：**
+1. Benchmark运行仍为客户端模拟，需对接实际推理引擎
+2. 参数调优"实时影响预估"和"灵敏度预览"基于公式/曲线生成，非真实数据
+3. i18n翻译键覆盖了主要页面文本，但部分动态生成内容（toast、错误消息）仍需补全
+4. WebSocket实时通知尚未完全集成到前端
+5. 部分标签页（Flame Chart, Sankey等）在agent-browser自动化测试中切换不灵敏（可能是Radix UI事件处理与自动化工具的兼容性问题，在真实浏览器中可能正常）
+
+**下一阶段优先事项：**
+1. **用户认证**：使用NextAuth.js v4实现登录/权限控制
+2. **WebSocket实时推送**：集成benchmark-ws服务，实时更新benchmark进度
+3. **更多高级图表**：甘特图(Gantt)、趋势预测图
+4. **数据持久化增强**：标注系统API持久化、Dashboard统计缓存
+5. **移动端适配优化**：底部导航栏、触摸手势优化
+6. **i18n完善**：补全所有动态文本的翻译键

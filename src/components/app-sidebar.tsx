@@ -1,10 +1,11 @@
 'use client'
 
-import { Cpu, LayoutDashboard, Box, SlidersHorizontal, Play, BarChart3, TrendingUp, Settings, Globe } from 'lucide-react'
+import { Cpu, LayoutDashboard, Box, SlidersHorizontal, Play, BarChart3, TrendingUp, Settings, Globe, Wifi, WifiOff, AlertTriangle } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '@/lib/store'
 import { useI18n } from '@/hooks/use-i18n'
+import { useModels, useBenchmarks, useResults, useAnalyses, useDashboardStats } from '@/hooks/use-api'
 import type { PageKey } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import {
@@ -23,23 +24,117 @@ import {
 } from '@/components/ui/sidebar'
 import { Button } from '@/components/ui/button'
 
-function useNavItems() {
-  const { t } = useI18n()
-  return [
-    { key: 'dashboard' as PageKey, label: t('nav.dashboard'), icon: LayoutDashboard, shortcut: '⌘1' },
-    { key: 'models' as PageKey, label: t('nav.models'), icon: Box, shortcut: '⌘2' },
-    { key: 'parameters' as PageKey, label: t('nav.parameters'), icon: SlidersHorizontal, shortcut: '⌘3' },
-    { key: 'benchmark' as PageKey, label: t('nav.benchmark'), icon: Play, badge: 3, shortcut: '⌘4' },
-    { key: 'reports' as PageKey, label: t('nav.reports'), icon: BarChart3, shortcut: '⌘5' },
-    { key: 'analysis' as PageKey, label: t('nav.analysis'), icon: TrendingUp, shortcut: '⌘6' },
-    { key: 'settings' as PageKey, label: t('nav.settings'), icon: Settings, shortcut: '⌘7' },
-  ]
+// ── Mini Stat Indicator Components ──────────────────────────────────────────
+
+function HealthDot({ healthy }: { healthy: boolean }) {
+  return (
+    <span className="relative flex h-2 w-2 shrink-0">
+      {healthy && (
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+      )}
+      <span
+        className={cn(
+          'relative inline-flex rounded-full h-2 w-2',
+          healthy ? 'bg-emerald-500' : 'bg-red-500'
+        )}
+      />
+    </span>
+  )
 }
+
+function MiniBadge({ count, variant = 'default' }: { count: number; variant?: 'default' | 'amber' }) {
+  if (count <= 0) return null
+  return (
+    <span
+      className={cn(
+        'ml-auto flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white group-data-[collapsible=icon]:hidden',
+        variant === 'amber' ? 'bg-amber-500' : 'bg-emerald-600'
+      )}
+    >
+      {count}
+    </span>
+  )
+}
+
+function RunningBadge({ count }: { count: number }) {
+  if (count <= 0) return null
+  return (
+    <span className="ml-auto flex items-center gap-1 group-data-[collapsible=icon]:hidden">
+      <span className="flex h-2 w-2 relative">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+        <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+      </span>
+      <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400">
+        {count} running
+      </span>
+    </span>
+  )
+}
+
+function SystemStatusIndicator({ status }: { status: 'online' | 'degraded' | 'offline' }) {
+  const config = {
+    online: { color: 'bg-emerald-500', ring: 'bg-emerald-400', text: 'Online', textColor: 'text-emerald-600 dark:text-emerald-400' },
+    degraded: { color: 'bg-yellow-500', ring: 'bg-yellow-400', text: 'Degraded', textColor: 'text-yellow-600 dark:text-yellow-400' },
+    offline: { color: 'bg-red-500', ring: 'bg-red-400', text: 'Offline', textColor: 'text-red-600 dark:text-red-400' },
+  }[status]
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="relative flex h-2.5 w-2.5">
+        {status !== 'offline' && (
+          <span className={cn('animate-ping absolute inline-flex h-full w-full rounded-full opacity-75', config.ring)} />
+        )}
+        <span className={cn('relative inline-flex rounded-full h-2.5 w-2.5', config.color)} />
+      </span>
+      <span className={cn('text-xs font-medium group-data-[collapsible=icon]:hidden', config.textColor)}>
+        {config.text}
+      </span>
+    </div>
+  )
+}
+
+// ── Main Sidebar Component ───────────────────────────────────────────────────
 
 export function AppSidebar() {
   const { activePage, setActivePage } = useAppStore()
   const { t, locale, setLocale } = useI18n()
-  const navItems = useNavItems()
+
+  // Live stats from API hooks
+  const { data: models, error: modelsError } = useModels()
+  const { data: benchmarks, error: benchmarksError } = useBenchmarks()
+  const { data: results, error: resultsError } = useResults()
+  const { data: analyses, error: analysesError } = useAnalyses()
+  const { data: dashboardStats, error: dashboardError } = useDashboardStats()
+
+  // Compute nav item stats
+  const modelCount = models?.length ?? 0
+  const runningBenchmarks = benchmarks?.filter((b) => b.status === 'running').length ?? 0
+  const resultCount = results?.length ?? 0
+  const analysisCount = analyses?.length ?? 0
+  const isHealthy = !dashboardError && !modelsError && !benchmarksError
+
+  // Determine system status
+  const systemStatus: 'online' | 'degraded' | 'offline' = (() => {
+    if (dashboardError && modelsError && benchmarksError && resultsError && analysesError) return 'offline'
+    if (dashboardError || modelsError || benchmarksError || resultsError || analysesError) return 'degraded'
+    return 'online'
+  })()
+
+  const navItems: {
+    key: PageKey
+    label: string
+    icon: React.ComponentType<{ className?: string }>
+    shortcut: string
+    stat?: React.ReactNode
+  }[] = [
+    { key: 'dashboard', label: t('nav.dashboard'), icon: LayoutDashboard, shortcut: '⌘1', stat: <HealthDot healthy={isHealthy} /> },
+    { key: 'models', label: t('nav.models'), icon: Box, shortcut: '⌘2', stat: <MiniBadge count={modelCount} /> },
+    { key: 'parameters', label: t('nav.parameters'), icon: SlidersHorizontal, shortcut: '⌘3' },
+    { key: 'benchmark', label: t('nav.benchmark'), icon: Play, shortcut: '⌘4', stat: <RunningBadge count={runningBenchmarks} /> },
+    { key: 'reports', label: t('nav.reports'), icon: BarChart3, shortcut: '⌘5', stat: <MiniBadge count={resultCount} variant="amber" /> },
+    { key: 'analysis', label: t('nav.analysis'), icon: TrendingUp, shortcut: '⌘6', stat: <MiniBadge count={analysisCount} /> },
+    { key: 'settings', label: t('nav.settings'), icon: Settings, shortcut: '⌘7' },
+  ]
 
   return (
     <Sidebar
@@ -127,11 +222,8 @@ export function AppSidebar() {
                                 {item.shortcut}
                               </span>
                             )}
-                            {item.badge !== undefined && (
-                              <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white group-data-[collapsible=icon]:hidden">
-                                {item.badge}
-                              </span>
-                            )}
+                            {/* Live stat indicator for this nav item */}
+                            {item.stat}
                           </SidebarMenuButton>
                         </TooltipTrigger>
                         <TooltipContent side="right" className="text-xs">
@@ -151,11 +243,10 @@ export function AppSidebar() {
         {/* Animated gradient line at the bottom */}
         <div className="absolute bottom-0 left-0 right-0 h-[2px] animate-gradient-line" />
         <div className="flex items-center gap-2 px-2 group-data-[collapsible=icon]:justify-center">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+          <SystemStatusIndicator status={systemStatus} />
+          <span className="text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+            · v1.0.0 · {t('nav.inferenceEnginePlatform')}
           </span>
-          <span className="text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">v1.0.0 · {t('nav.inferenceEnginePlatform')}</span>
           <Button
             variant="ghost"
             size="icon"
